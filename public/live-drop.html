@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8" />
+    <title>Live Drop – Viewer</title>
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+  </head>
+  <body>
+    <h1>Fetched Rolls (raw)</h1>
+    <div id="log"></div>
+
+    <script>
+      (function () {
+        var log = document.getElementById('log');
+        var MAX_ITEMS = 20;
+
+        function appendTop(obj) {
+          var wrap = document.createElement('div');
+          var dataDiv = document.createElement('div');
+          dataDiv.textContent = JSON.stringify(obj.payload ? obj.payload.data : obj.data);
+          wrap.appendChild(dataDiv);
+          log.prepend(wrap);
+
+          // mantém no máximo 20
+          while (log.children.length > MAX_ITEMS) {
+            log.removeChild(log.lastElementChild);
+          }
+        }
+
+        // 1) bootstrap: pegar os 20 últimos já processados
+        fetch('/api/fetched-rolls?limit=' + MAX_ITEMS)
+          .then(function (r) { return r.json(); })
+          .then(function (j) {
+            // a API já retorna ordenado por created_at DESC
+            (j.items || []).forEach(function (row) {
+              appendTop({ data: row.data }); // mantém “bruto”, sem formatação
+            });
+          })
+          .catch(function () { /* ignore */ });
+
+        // 2) WebSocket: inserir novos no topo e capar
+        var proto = (location.protocol === 'https:') ? 'wss' : 'ws';
+        var ws = new WebSocket(proto + '://' + location.host + '/ws');
+
+        ws.onmessage = function (ev) {
+          try {
+            var msg = JSON.parse(ev.data);
+            if (msg && msg.event === 'fetched_roll') {
+              appendTop(msg);
+            }
+          } catch (e) { /* ignore */ }
+        };
+
+        ws.onopen = function(){ console.log('[viewer] ws open'); };
+        ws.onclose = function(){ console.log('[viewer] ws closed'); };
+        ws.onerror = function(e){ console.log('[viewer] ws error', e); };
+      })();
+    </script>
+  </body>
+</html>

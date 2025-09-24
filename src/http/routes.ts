@@ -70,49 +70,4 @@ router.post(
   }
 );
 
- router.get('/viewer', (_req, res) => {
-    res.type('html').send(`<!doctype html>
-<html lang="pt-BR">
-  <head>
-    <meta charset="utf-8" />
-    <title>Live Drop – Viewer</title>
-  </head>
-  <body>
-    <h1>Fetched Rolls (raw)</h1>
-    <div id="log"></div>
-
-    <script>
-      (function () {
-        var el = document.getElementById('log');
-        function append(obj) {
-          var wrap = document.createElement('div');
-          // Apenas monta divs com o "data" bruto como string
-          var dataDiv = document.createElement('div');
-          dataDiv.textContent = JSON.stringify(obj.payload.data);
-          wrap.appendChild(dataDiv);
-          el.prepend(wrap); // mais recente em cima
-        }
-
-        // mesmo host/porta, path /ws
-        var proto = location.protocol === 'https:' ? 'wss' : 'ws';
-        var ws = new WebSocket(proto + '://' + location.host + '/ws');
-
-        ws.onmessage = function (ev) {
-          try {
-            var msg = JSON.parse(ev.data);
-            if (msg && msg.event === 'fetched_roll') {
-              append(msg);
-            }
-          } catch (e) {}
-        };
-
-        ws.onopen = function(){ console.log('[viewer] ws open'); };
-        ws.onclose = function(){ console.log('[viewer] ws closed'); };
-        ws.onerror = function(e){ console.log('[viewer] ws error', e); };
-      })();
-    </script>
-  </body>
-</html>`);
-  });
-
 export default router;

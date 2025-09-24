@@ -1,14 +1,11 @@
-import { fetchRollBlockHTML } from '../services/fetch-roll.adapter';
+import { fetchRollBlockHTML } from '../services/fetch-roll.service';
 import {
-  enqueueRoll,
-  claimNextRolls,
-  deleteFromQueue,
-  markFailedOrRequeue,
-  type RollType
+  enqueueRoll, claimNextRolls, deleteFromQueue, markFailedOrRequeue, type RollType
 } from '../repositories/rolls.repo';
 import { insertFetched } from '../repositories/fetched-rolls.repo';
 import { ENV } from '../config/env';
 import type { WsHub } from '../services/ws-hub';
+import { triggerConsumption } from '../jobs/job-runner';
 
 const DEFAULT_BATCH = ENV.JOBS_DEFAULT_BATCH;
 const MAX_TRIES = ENV.JOBS_MAX_TRIES;
@@ -16,12 +13,25 @@ const MAX_TRIES = ENV.JOBS_MAX_TRIES;
 let wsHub: WsHub | null = null;
 export function setRollsWsHub(h: WsHub) { wsHub = h; }
 
-// enqueue
+// enqueue + WS + listener imediato
 export async function enqueue(params: { userId: string; rollId: string; type: RollType }) {
   await enqueueRoll({ userId: params.userId, roll: params.rollId, type: params.type });
+
+  try {
+    // opcional: avisa viewers que entrou um item na fila
+    wsHub?.broadcastQueuedRoll({
+      id: 0, // se quiser, você pode SELECT LAST_INSERT_ID() com conexão dedicada
+      userId: params.userId,
+      roll: params.rollId,
+      type: params.type,
+      createdAt: new Date().toISOString()
+    });
+  } catch {}
+
+  // tenta consumir imediatamente se houver capacidade
+  triggerConsumption().catch(() => {});
 }
 
-// consumidor em batch
 export async function consumeBatch({ batch = DEFAULT_BATCH } = {}) {
   const jobs = await claimNextRolls({ batch, maxTries: MAX_TRIES });
   if (!jobs.length) return { claimed: 0, done: 0, requeued: 0 };
@@ -38,7 +48,6 @@ export async function consumeBatch({ batch = DEFAULT_BATCH } = {}) {
         timeoutMs: 30_000
       });
 
-      // salva na fetched_rolls
       await insertFetched({
         userId: job.user_id,
         roll: job.roll,
@@ -46,11 +55,9 @@ export async function consumeBatch({ batch = DEFAULT_BATCH } = {}) {
         data
       });
 
-      // remove da fila (ou você pode manter histórico alterando o design)
       await deleteFromQueue(job.id);
       done += 1;
 
-      // broadcast opcional
       try {
         wsHub?.broadcastFetchedRoll({
           userId: job.user_id,

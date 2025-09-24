@@ -165,7 +165,6 @@ async function findUpgradeWithLoadMore(page, rollId, maxClicks = LOAD_MORE_MAX_C
     await waitMoreBlocks(page, before, 5000);
     await waitMs(page, 250);
     data = await parseUpgradeBlock(page, rollId);
-    console.log(data)
     if (data) return data;
   }
   return null;

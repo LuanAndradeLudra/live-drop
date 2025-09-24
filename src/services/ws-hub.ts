@@ -3,11 +3,10 @@ import { WebSocketServer, WebSocket } from 'ws';
 
 export interface WsHub {
   broadcastFetchedRoll(payload: {
-    userId: string;
-    roll: string;
-    type: 'upgrade' | 'case';
-    data: any;
-    processedAt: string;
+    userId: string; roll: string; type: 'upgrade' | 'case'; data: any; processedAt: string;
+  }): void;
+  broadcastQueuedRoll(payload: {
+    id: number; userId: string; roll: string; type: 'upgrade' | 'case'; createdAt: string;
   }): void;
 }
 
@@ -15,7 +14,6 @@ export function createWsHub(server: HttpServer, { path = '/ws' } = {}): WsHub {
   const wss = new WebSocketServer({ server, path });
 
   wss.on('connection', (ws) => {
-    // opcional: handshake simples
     try { ws.send(JSON.stringify({ event: 'hello', ts: Date.now() })); } catch {}
   });
 
@@ -31,6 +29,9 @@ export function createWsHub(server: HttpServer, { path = '/ws' } = {}): WsHub {
   return {
     broadcastFetchedRoll(payload) {
       safeBroadcast({ event: 'fetched_roll', payload });
+    },
+    broadcastQueuedRoll(payload) {
+      safeBroadcast({ event: 'queued_roll', payload });
     }
   };
 }
