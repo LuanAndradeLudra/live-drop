@@ -25,7 +25,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 function buildLaunchOpts() {
   const launchOpts = {
-    headless: false,
+    headless: process.env.SERVER === "hml" ? false : true,
     devtools: !!ENV.DEVTOOLS,
     slowMo: ENV.SLOWMO || 0,
     executablePath: ENV.EXEC_PATH,
