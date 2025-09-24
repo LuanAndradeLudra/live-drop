@@ -5,6 +5,19 @@ const OPEN_TAB_MAX_ATTEMPTS = 5;
 const JOB_TIMEOUT_MS = 30_000;
 const LOAD_MORE_MAX_CLICKS = 3;
 
+let userData = {};
+
+async function getUserData(page) {
+  return page.evaluate(() => {
+    const clean = (s) => (typeof s === 'string' ? s.replace(/\s+/g, ' ').trim() : s);
+    return {
+      userId:   clean(document.querySelector(".user__id")?.textContent.replace("ID: ", "") || ''),
+      userName: clean(document.querySelector(".user__name")?.textContent || ''),
+      userImage: clean(document.querySelector(".user__img > img")?.src || ''),
+    };
+  });
+}
+
 function waitMs(page, ms) {
   if (page && typeof page.waitForTimeout === 'function') {
     return page.waitForTimeout(ms);
@@ -91,8 +104,8 @@ async function openUpgradesWithRetry(page, maxAttempts = OPEN_TAB_MAX_ATTEMPTS) 
   throw new Error('Não foi possível abrir a aba "Aprimoramentos"');
 }
 
-async function parseUpgradeBlock(page, rollId) {
-  return page.evaluate((wanted) => {
+async function parseUpgradeBlock(page, rollId, baseUser) {
+  return page.evaluate((wanted, baseUser) => {
     const clean = (s) => (typeof s === 'string' ? s.replace(/\s+/g, ' ').trim() : s);
 
     const blocks = Array.from(document.querySelectorAll('.skins-block'));
@@ -107,9 +120,9 @@ async function parseUpgradeBlock(page, rollId) {
 
       const headCols = block.querySelectorAll('.skins-block__head-column');
 
-      const usedValue = headCols[0];
-      const skinsBalance = clean(usedValue?.querySelectorAll('.price')[0]?.textContent || '');
-      const balance      = clean(usedValue?.querySelectorAll('.price')[1]?.textContent || '');
+      const usedValue   = headCols[0];
+      const firstValue  = clean(usedValue?.querySelectorAll('.price')[0]?.textContent || '');
+      const secondValue = clean(usedValue?.querySelectorAll('.price')[1]?.textContent || '');
 
       const receivedValue   = headCols[1];
       const chance          = clean(receivedValue?.querySelectorAll('.action_lighten-border')[0]?.textContent || '');
@@ -118,13 +131,12 @@ async function parseUpgradeBlock(page, rollId) {
       const usedSkins = block.querySelectorAll('.skins-block__item_left > .skins-block__item-data');
       const usedSkinsFormatted = [];
       usedSkins.forEach((skin) => {
-        const formatedSkin = {
+        usedSkinsFormatted.push({
           name:   clean(skin.querySelector('.skins-block__name')?.textContent || ''),
           type:   clean(skin.querySelector('.skins-block__type')?.textContent || ''),
           image:  clean(skin.querySelector('.skins-block__item-img')?.src || ''),
           rarity: clean((skin.classList && skin.classList[skin.classList.length - 1]) || ''),
-        };
-        usedSkinsFormatted.push(formatedSkin);
+        });
       });
 
       const receivedSkin = block.querySelector('.skins-block__item_right > .skins-block__item-data');
@@ -136,40 +148,41 @@ async function parseUpgradeBlock(page, rollId) {
       } : null;
 
       return {
+        ...(baseUser || {}),
         type: 'upgrade',
         rollId: found,
-        skinsBalance,
-        balance,
+        firstValue,
+        secondValue,
         chance,
         receivedBalance,
         usedSkinsFormatted,
         receivedSkinsFormatted,
-        // html: block.outerHTML,
       };
     }
     return null;
-  }, rollId);
+  }, rollId, baseUser);
 }
 
-async function findUpgradeWithLoadMore(page, rollId, maxClicks = LOAD_MORE_MAX_CLICKS) {
+async function findUpgradeWithLoadMore(page, rollId, maxClicks = LOAD_MORE_MAX_CLICKS, baseUser = {}) {
   try {
-    let data = await parseUpgradeBlock(page, rollId);
-  if (data) return data;
-
-  for (let i = 0; i < maxClicks; i++) {
-    const before = await page.evaluate(() => document.querySelectorAll('.skins-block').length);
-
-    const clicked = await clickLoadMoreOnce(page);
-    
-    if (!clicked) break;
-    await waitMoreBlocks(page, before, 5000);
-    await waitMs(page, 250);
-    data = await parseUpgradeBlock(page, rollId);
+    let data = await parseUpgradeBlock(page, rollId, baseUser);
     if (data) return data;
-  }
-  return null;
+
+    for (let i = 0; i < maxClicks; i++) {
+      const before = await page.evaluate(() => document.querySelectorAll('.skins-block').length);
+      const clicked = await clickLoadMoreOnce(page);
+      if (!clicked) break;
+
+      await waitMoreBlocks(page, before, 5000);
+      await waitMs(page, 250);
+
+      data = await parseUpgradeBlock(page, rollId, baseUser);
+      if (data) return data;
+    }
+    return null;
   } catch (err) {
-    console.log(err)
+    console.log(err);
+    return null;
   }
 }
 
@@ -223,13 +236,11 @@ async function clickCaseAnchor(page, rollId) {
   ]);
 }
 
-async function parseProvablyCasePage(page, rollId) {
-  // garante que a página carregou os elementos alvo
+async function parseProvablyCasePage(page, rollId, baseUser) {
   await page.waitForSelector('.layout-provably-fair__title', { timeout: 10000 });
-
   const provablyUrl = page.url();
 
-  return page.evaluate((wanted, provablyUrl) => {
+  return page.evaluate((wanted, provablyUrl, baseUser) => {
     const clean = (s) => (typeof s === 'string' ? s.replace(/\s+/g, ' ').trim() : s);
     const parseNum = (s) => {
       if (!s) return null;
@@ -242,6 +253,13 @@ async function parseProvablyCasePage(page, rollId) {
       const cls = el.className || '';
       const m = cls.match(/price-(USD|EUR|BRL)/i);
       return m ? m[1].toUpperCase() : null;
+    };
+    const qText = (root, selectors) => {
+      for (const sel of selectors.split(',')) {
+        const el = root.querySelector(sel.trim());
+        if (el && clean(el.textContent)) return clean(el.textContent);
+      }
+      return '';
     };
 
     // Roll number
@@ -261,15 +279,47 @@ async function parseProvablyCasePage(page, rollId) {
     const casePrice = parseNum(casePriceEl?.textContent || '');
     const caseCurrency = currencyFrom(casePriceEl);
 
-    // Drop atual
-    const row = document.querySelector('tr.current-roll-drop');
-    const dropImg   = row?.querySelector('.table-big__item-img')?.src || '';
-    const dropName  = row?.querySelector('.table-big__first-name')?.textContent || '';
-    const dropPriceEl = row?.querySelector('.table-big__accent.price');
+    // ====== DROP ATUAL (robusto) ======
+    // 1) acha a row "atual" com vários fallbacks
+    let row =
+      document.querySelector('tr.current-roll-drop, tr.current-drop, tr.is-current, tr.table-big__row_current') ||
+      document.querySelector('.table-big tbody tr');
+
+    // 2) pega imagem e ALT (fallback pro nome)
+    const imgEl = row?.querySelector('img.table-big__item-img, .table-big__item-img img');
+    const dropImg = imgEl?.src || '';
+    const imgAlt  = clean(imgEl?.alt || '');
+
+    // 3) pega "type" e "name" com múltiplos seletores
+    const dropType = row ? qText(row, `
+      .table-big__first-type,
+      .table-big__type,
+      .table-big__first .type
+    `) : '';
+
+    let dropNameMain = row ? qText(row, `
+      .table-big__first-name,
+      .table-big__name,
+      .table-big__first-title,
+      .table-big__first .name
+    `) : '';
+
+    // 4) fallback total: se nada deu, usa o bloco inteiro ou o alt
+    if (!dropType && !dropNameMain && row) {
+      dropNameMain = qText(row, '.table-big__first, .table-big__title, .table-big__col_first') || imgAlt;
+    }
+
+    // 5) monta o nome final
+    let resolvedName = dropNameMain;
+    if (dropType && dropNameMain) resolvedName = `${dropType} | ${dropNameMain}`;
+    if (!resolvedName) resolvedName = imgAlt; // último recurso
+
+    // preço e moeda
+    const dropPriceEl = row?.querySelector('.table-big__accent.price, .price.table-big__accent');
     const dropPrice = parseNum(dropPriceEl?.textContent || '');
     const dropCurrency = currencyFrom(dropPriceEl);
 
-    // odds e range (se existirem nessas colunas)
+    // odds e range
     let oddsPercent = null;
     let range = null;
     if (row) {
@@ -282,6 +332,7 @@ async function parseProvablyCasePage(page, rollId) {
     }
 
     return {
+      ...(baseUser || {}),
       type: 'case',
       rollId: wanted,
       provablyUrl,
@@ -293,7 +344,7 @@ async function parseProvablyCasePage(page, rollId) {
         currency: caseCurrency,
       },
       drop: {
-        name: clean(dropName),
+        name: resolvedName,
         image: clean(dropImg),
         price: dropPrice,
         currency: dropCurrency,
@@ -301,8 +352,9 @@ async function parseProvablyCasePage(page, rollId) {
         range,
       },
     };
-  }, rollId, provablyUrl);
+  }, rollId, provablyUrl, baseUser);
 }
+
 
 async function findCaseAndOpenProvably(page, rollId, maxClicks = LOAD_MORE_MAX_CLICKS) {
   // tenta direto
@@ -356,20 +408,25 @@ export async function fetchRollBlockHTML({ userId, rollId, type = 'upgrade', tim
     await page.goto(url, { waitUntil: 'networkidle2', timeout: 30_000 });
     await hideMobileNav(page);
 
+    // CAPTURA OS DADOS DO USUÁRIO AQUI (página do perfil)
+    userData = await getUserData(page);
+
     if (type === 'upgrade') {
       await openUpgradesWithRetry(page);
       await page.waitForSelector('.skins-block', { timeout: 10_000 });
-      const data = await findUpgradeWithLoadMore(page, rollId, LOAD_MORE_MAX_CLICKS);
+      const data = await findUpgradeWithLoadMore(page, rollId, LOAD_MORE_MAX_CLICKS, userData);
       if (!data) throw new Error(`RollID ${rollId} não encontrado (upgrade)`);
       return data;
     }
 
     // type === 'case'
     await openCaseGridWithRetry(page);
+    // ainda estamos na página do usuário — userData já está capturado
+
     const opened = await findCaseAndOpenProvably(page, rollId, LOAD_MORE_MAX_CLICKS);
     if (!opened) throw new Error(`RollID ${rollId} não encontrado (case)`);
 
-    const data = await parseProvablyCasePage(page, rollId);
+    const data = await parseProvablyCasePage(page, rollId, userData);
     if (!data) throw new Error(`Falha ao parsear Provably Fair (case)`);
     return data;
   };
@@ -381,3 +438,4 @@ export async function fetchRollBlockHTML({ userId, rollId, type = 'upgrade', tim
     try { await page?.close(); } catch {}
   }
 }
+

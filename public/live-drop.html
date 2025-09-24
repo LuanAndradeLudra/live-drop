@@ -1,59 +1,529 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="pt-BR">
   <head>
     <meta charset="utf-8" />
     <title>Live Drop – Viewer</title>
-    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <style>
+      * {
+        padding: 0;
+        margin: 0;
+        font-family: "Gill Sans", "Gill Sans MT", Calibri, "Trebuchet MS",
+          sans-serif;
+      }
+      a {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        text-decoration: none;
+        color: white;
+      }
+      .live-drop {
+        width: 100%;
+        height: 500px;
+        background-color: black;
+        display: flex;
+        align-items: center;
+      }
+
+      .live-drop .streammer {
+        padding: 15px;
+      }
+
+      .streammer .logo {
+        width: 75px;
+      }
+
+      .drops-area {
+        display: flex;
+        gap: 15px;
+      }
+
+      .drop {
+        width: 300px;
+        color: white;
+        display: flex;
+        flex-direction: column;
+        padding: 6px 0;
+        border-radius: 8px;
+        box-shadow: 0 0 10px rgba(0, 0, 0, 0.5);
+      }
+
+      .drop-restricted {
+        background: linear-gradient(0deg, #8000e2, #0000);
+        border: 2px solid #d8a8fd;
+      }
+
+      .drop-common {
+        background: linear-gradient(0deg, #89c0db, #0000);
+        border: 2px solid #89c0db;
+      }
+      .drop-uncommon {
+        background: linear-gradient(0deg, #009ae2, #0000);
+        border: 2px solid #89c0db;
+      }
+      .drop-milspec {
+        background: linear-gradient(0deg, #006ae2, #0000);
+        border: 2px solid #89c0db;
+      }
+      .drop-restricted {
+        background: linear-gradient(0deg, #8000e2, #0000);
+        border: 2px solid #d8a8fd;
+      }
+      .drop-classified {
+        background: linear-gradient(0deg, #e200a0, #0000);
+        border: 2px solid #f879d2;
+      }
+      .drop-covert {
+        background: linear-gradient(0deg, #e23000, #0000);
+        border: 2px solid #e23000;
+      }
+      .drop-rare {
+        background: linear-gradient(0deg, #ffc600, #0000);
+        border: 2px solid #ffc600;
+      }
+
+      .drop .top-area {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 0 12px;
+      }
+
+      .drop .user-area {
+        display: flex;
+        gap: 8px;
+      }
+
+      .drop .user-area .logo img {
+        width: 30px;
+        border-radius: 6px;
+      }
+
+      .drop .user-area .name {
+        max-width: 100px;
+        font-size: 12px;
+        font-weight: 700;
+      }
+
+      .drop .top-area .multiplier {
+        font-size: 18px;
+        font-weight: 900;
+        text-align: right;
+      }
+
+      .drop .top-area .provably {
+        font-size: 10px;
+        color: #ffffff77;
+        text-align: right;
+      }
+
+      .divider {
+        width: 90%;
+        margin: 6px auto;
+        height: 2px;
+        background-color: #ffffff33;
+      }
+
+      .vertical-divider {
+        width: 2px;
+        height: 120px;
+        background-color: #ffffff33;
+      }
+
+      .skins-section {
+        display: flex;
+        justify-content: space-evenly;
+        align-items: center;
+      }
+
+      .skins-section .name {
+        color: #ffffff99;
+        font-size: 10px;
+        margin: 6px 0;
+        text-align: center;
+      }
+
+      .skins-section .price {
+        font-weight: 900;
+        font-size: 14px;
+        text-align: center;
+      }
+
+      .upgrade {
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        text-align: center;
+      }
+
+      .upgrade-grid {
+        --ug-gap: 8px;
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        align-items: center;
+        gap: var(--ug-gap);
+      }
+
+      .upgrade-grid > .upgrade-item:last-child:nth-child(odd) {
+        grid-column: 1 / -1;
+        justify-self: center;
+        width: calc((100% - var(--ug-gap)) / 2);
+      }
+
+      .upgrade .balance {
+        font-weight: 900;
+        font-size: 14px;
+        text-align: center;
+      }
+
+      .upgrade .logo {
+        width: 130px;
+        height: 74px;
+        background-position: center;
+        background-repeat: no-repeat;
+        background-size: contain;
+      }
+
+      .upgrade .logo-balance {
+        width: 120px;
+        height: 64px;
+        background-position: center;
+        background-repeat: no-repeat;
+        background-size: contain;
+        margin-top: 10px;
+      }
+
+      .upgrade .logo-grid {
+        background-position: center;
+        background-repeat: no-repeat;
+        background-size: contain;
+      }
+
+      .case {
+        display: flex;
+        flex-direction: column;
+        justify-content: start;
+      }
+      .case .logo {
+        width: 130px;
+        height: 74px;
+        background-position: center;
+        background-repeat: no-repeat;
+        background-size: contain;
+      }
+
+      .received .logo {
+        width: 130px;
+        height: 74px;
+        background-position: center;
+        background-repeat: no-repeat;
+        background-size: contain;
+      }
+
+      .balance-absolute {
+        font-weight: 800;
+        font-size: 12px;
+        margin-left: 8px;
+        text-align: center;
+      }
+    </style>
   </head>
   <body>
-    <h1>Fetched Rolls (raw)</h1>
-    <div id="log"></div>
+    <div class="live-drop">
+      <div class="streammer">
+        <a href="#">
+          <img
+            src="https://canaldosaullo.com/assets/images/avatar.png"
+            alt=""
+            class="logo"
+          />
+        </a>
+      </div>
+      <div class="drops-area"></div>
+    </div>
 
     <script>
       (function () {
-        var log = document.getElementById('log');
+        var dropsArea = document.querySelector(".drops-area");
         var MAX_ITEMS = 20;
 
-        function appendTop(obj) {
-          var wrap = document.createElement('div');
-          var dataDiv = document.createElement('div');
-          dataDiv.textContent = JSON.stringify(obj.payload ? obj.payload.data : obj.data);
-          wrap.appendChild(dataDiv);
-          log.prepend(wrap);
+        function renderDrop(drop) {
+          let dropHTML = "";
+          let rarityClass = "";
 
-          // mantém no máximo 20
-          while (log.children.length > MAX_ITEMS) {
-            log.removeChild(log.lastElementChild);
+          // Determinar a classe de raridade para o drop
+          if (drop.type === "case" && drop.drop && drop.drop.rarity) {
+            rarityClass = `drop-${drop.drop.rarity.toLowerCase()}`;
+          } else if (
+            drop.type === "upgrade" &&
+            drop.receivedSkinsFormatted &&
+            drop.receivedSkinsFormatted.rarity
+          ) {
+            rarityClass = `drop-${drop.receivedSkinsFormatted.rarity.toLowerCase()}`;
+          }
+
+          if (drop.type === "case") {
+            dropHTML = `
+              <div class="drop ${rarityClass}">
+                <div class="top-area">
+                  <div class="user-area">
+                    <a href="${"https://csgo.net/user/" + drop.userId}">
+                    <div class="logo">
+                        <img src="${drop.userImage}" alt="" />
+                    </div>
+                    <div class="name">${drop.userName}</div>
+                    </a>
+                  </div>
+                  <div class="multiplier">${(
+                    drop.drop.price / drop.case.price
+                  ).toFixed(2)}x  <br /> <div class="provably">${
+              drop.rollNumber
+            }</div></div>
+                </div>
+                <div class="divider"></div>
+                <div class="skins-section">
+                  <div class="case">
+                    <div class="logo" style="background-image: url('${
+                      drop.case.image
+                    }');"></div>
+                    <div class="name">${drop.case.name.toUpperCase()}</div>
+                    <div class="price">$ ${drop.case.price.toFixed(2)}</div>
+                  </div>
+                  <div class="vertical-divider"></div>
+                  <div class="received">
+                    <div class="logo" style="background-image: url('${
+                      drop.drop.image
+                    }');"></div>
+                    <div class="name">${drop.drop.name}</div>
+                    <div class="price">$ ${drop.drop.price.toFixed(2)}</div>
+                  </div>
+                </div>
+              </div>
+            `;
+          } else if (drop.type === "upgrade") {
+            if (drop.usedSkinsFormatted.length === 0) {
+              dropHTML = `
+                <div class="drop ${rarityClass}">
+                  <div class="top-area">
+                    <div class="user-area">
+                         <a href="${"https://csgo.net/user/" + drop.userId}">
+                      <div class="logo">
+                          <img src="${drop.userImage}" alt="" />
+                          </div>
+                          <div class="name">${drop.userName}</div>
+                          </a>
+                    </div>
+                    <div class="multiplier">${
+                      drop.chance
+                    } <br /> <div class="provably">${
+                drop.provablyUrl ? drop.provablyUrl.split("rollID=")[1] : ""
+              }</div></div>
+                  </div>
+                  <div class="divider"></div>
+                  <div class="skins-section">
+                    <div class="upgrade">
+                      <div class="upgrade-item">
+                        <div class="logo-balance" style="background-image: url('https://csgo.net/public/img/other/upgrade/balance.png?v=5');"></div>
+                        <div class="name">Balance</div>
+                      </div>
+                      <span class="balance">$ ${parseFloat(
+                        drop.firstValue
+                      ).toFixed(2)}</span>
+                    </div>
+                    <div class="vertical-divider"></div>
+                    <div class="received">
+                      <div class="logo" style="background-image: url('${
+                        drop.receivedSkinsFormatted.image
+                      }');"></div>
+                      <div class="name">${drop.receivedSkinsFormatted.type} - ${
+                drop.receivedSkinsFormatted.name
+              }</div>
+                      <div class="price">$ ${parseFloat(
+                        drop.receivedBalance
+                      ).toFixed(2)}</div>
+                    </div>
+                  </div>
+                </div>
+              `;
+            } else if (drop.usedSkinsFormatted.length === 1) {
+              const usedSkin = drop.usedSkinsFormatted[0];
+              dropHTML = `
+                <div class="drop ${rarityClass}">
+                  <div class="top-area">
+                    <div class="user-area">
+                         <a href="${"https://csgo.net/user/" + drop.userId}">
+                      <div class="logo">
+                          <img src="${drop.userImage}" alt="" />
+                          </div>
+                          <div class="name">${drop.userName}</div>
+                          </a>
+                    </div>
+                    <div class="multiplier">${
+                      drop.chance
+                    } <br /> <div class="provably">${
+                drop.provablyUrl ? drop.provablyUrl.split("rollID=")[1] : ""
+              }</div></div>
+                  </div>
+                  <div class="divider"></div>
+                  <div class="skins-section">
+                    <div class="upgrade">
+                      <div class="upgrade-item">
+                        <div class="logo" style="background-image: url('${
+                          usedSkin.image
+                        }');"></div>
+                        <div class="name">${usedSkin.type} - ${
+                usedSkin.name
+              }</div>
+                      </div>
+                      
+                    <div class="balance-absolute">$ ${parseFloat(
+                      drop.firstValue
+                    ).toFixed(2)} ${
+                drop.secondValue && parseFloat(drop.secondValue) > 0
+                  ? "+ Balance $ " + parseFloat(drop.secondValue).toFixed(2)
+                  : ""
+              }</div>
+                    </div>
+                    <div class="vertical-divider"></div>
+                    <div class="received">
+                      <div class="logo" style="background-image: url('${
+                        drop.receivedSkinsFormatted.image
+                      }');"></div>
+                      <div class="name">${drop.receivedSkinsFormatted.type} - ${
+                drop.receivedSkinsFormatted.name
+              }</div>
+                      <div class="price">$ ${parseFloat(
+                        drop.receivedBalance
+                      ).toFixed(2)}</div>
+                    </div>
+                  </div>
+
+                </div>
+              `;
+            } else if (drop.usedSkinsFormatted.length > 1) {
+              const usedSkinsGrid = drop.usedSkinsFormatted
+                .map(
+                  (skin) => `
+                    <div class="upgrade-item">
+                      <div class="logo-grid" style="background-image: url('${skin.image}'); width: 80px; height: 50px;"></div>
+                    </div>
+                  `
+                )
+                .join("");
+
+              dropHTML = `
+                <div class="drop ${rarityClass}">
+                  <div class="top-area">
+                    <div class="user-area">
+                        <a href="${"https://csgo.net/user/" + drop.userId}">
+                      <div class="logo">
+                          <img src="${drop.userImage}" alt="" />
+                          </div>
+                          <div class="name">${drop.userName}</div>
+                          </a>
+                    </div>
+                    <div class="multiplier">${
+                      drop.chance
+                    }<br /> <div class="provably">${
+                drop.provablyUrl ? drop.provablyUrl.split("rollID=")[1] : ""
+              }</div></div>
+                  </div>
+                  <div class="divider"></div>
+                  <div class="skins-section">
+                    <div class="upgrade">
+                      <div class="upgrade-grid">
+                          ${usedSkinsGrid}
+                      </div>
+                      <div class="balance-absolute"> $ ${parseFloat(
+                        drop.firstValue
+                      ).toFixed(2)} ${
+                drop.secondValue && parseFloat(drop.secondValue) > 0
+                  ? "+ Balance $ " + parseFloat(drop.secondValue).toFixed(2)
+                  : ""
+              }</div>
+                    </div>
+                    <div class="vertical-divider"></div>
+                    <div class="received">
+                      <div class="logo" style="background-image: url('${
+                        drop.receivedSkinsFormatted.image
+                      }');"></div>
+                      <div class="name">${drop.receivedSkinsFormatted.type} - ${
+                drop.receivedSkinsFormatted.name
+              }</div>
+                      <div class="price">$ ${parseFloat(
+                        drop.receivedBalance
+                      ).toFixed(2)}</div>
+                    </div>
+                  </div>
+                </div>
+              `;
+            }
+          }
+
+          const newDropElement = document.createElement("div");
+          newDropElement.innerHTML = dropHTML.trim();
+          dropsArea.prepend(newDropElement.firstChild);
+
+          // Remove o último item se exceder MAX_ITEMS
+          while (dropsArea.children.length > MAX_ITEMS) {
+            dropsArea.removeChild(dropsArea.lastElementChild);
           }
         }
 
         // 1) bootstrap: pegar os 20 últimos já processados
-        fetch('/api/fetched-rolls?limit=' + MAX_ITEMS)
-          .then(function (r) { return r.json(); })
+        fetch("/api/fetched-rolls?limit=" + MAX_ITEMS)
+          .then(function (r) {
+            return r.json();
+          })
           .then(function (j) {
-            // a API já retorna ordenado por created_at DESC
-            (j.items || []).forEach(function (row) {
-              appendTop({ data: row.data }); // mantém “bruto”, sem formatação
+            // A API já retorna ordenado por created_at DESC
+            // Renderiza na ordem inversa para que os mais recentes fiquem no topo
+            (j.items || []).reverse().forEach(function (row) {
+              // A API original retornava `row.data` com o payload, mas o mock tem `payload.data` ou `data`
+              // Vamos tentar parsear ou usar o objeto diretamente, dependendo da estrutura
+              let dropData;
+              try {
+                dropData = JSON.parse(row.data);
+              } catch (e) {
+                dropData = row.data; // Se não for JSON string, usa o objeto direto
+              }
+              renderDrop(dropData);
             });
           })
-          .catch(function () { /* ignore */ });
+          .catch(function (e) {
+            console.error("[viewer] fetch error", e);
+          });
 
         // 2) WebSocket: inserir novos no topo e capar
-        var proto = (location.protocol === 'https:') ? 'wss' : 'ws';
-        var ws = new WebSocket(proto + '://' + location.host + '/ws');
+        var proto = location.protocol === "https:" ? "wss" : "ws";
+        var ws = new WebSocket(proto + "://" + location.host + "/ws");
 
         ws.onmessage = function (ev) {
           try {
             var msg = JSON.parse(ev.data);
-            if (msg && msg.event === 'fetched_roll') {
-              appendTop(msg);
+            if (
+              msg &&
+              msg.event === "fetched_roll" &&
+              msg.payload &&
+              msg.payload.data
+            ) {
+              renderDrop(msg.payload.data); // Renderiza o payload.data que é o objeto do drop
             }
-          } catch (e) { /* ignore */ }
+          } catch (e) {
+            console.error("[viewer] ws message error", e);
+          }
         };
 
-        ws.onopen = function(){ console.log('[viewer] ws open'); };
-        ws.onclose = function(){ console.log('[viewer] ws closed'); };
-        ws.onerror = function(e){ console.log('[viewer] ws error', e); };
+        ws.onopen = function () {
+          console.log("[viewer] ws open");
+        };
+        ws.onclose = function () {
+          console.log("[viewer] ws closed");
+        };
+        ws.onerror = function (e) {
+          console.log("[viewer] ws error", e);
+        };
       })();
     </script>
   </body>
