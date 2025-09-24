@@ -17,18 +17,17 @@ export function setRollsWsHub(h: WsHub) { wsHub = h; }
 export async function enqueue(params: { userId: string; rollId: string; type: RollType }) {
   await enqueueRoll({ userId: params.userId, roll: params.rollId, type: params.type });
 
+  // opcional: WS de "queued"
   try {
-    // opcional: avisa viewers que entrou um item na fila
     wsHub?.broadcastQueuedRoll({
-      id: 0, // se quiser, você pode SELECT LAST_INSERT_ID() com conexão dedicada
+      id: 0,
       userId: params.userId,
       roll: params.rollId,
       type: params.type,
       createdAt: new Date().toISOString()
     });
   } catch {}
-
-  // tenta consumir imediatamente se houver capacidade
+  // tenta consumir imediatamente (com debounce/controle do runner)
   triggerConsumption().catch(() => {});
 }
 

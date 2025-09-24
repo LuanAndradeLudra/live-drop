@@ -56,13 +56,11 @@ function onBrowserEvents(b) {
   b.on('targetcreated', (t) => {
     const url = safe(() => t.url()) || '';
     if (!url.startsWith('devtools://')) {
-      console.log('[pptr] target created:', url.slice(0, 120));
     }
   });
   b.on('targetdestroyed', (t) => {
     const url = safe(() => t.url()) || '';
     if (!url.startsWith('devtools://')) {
-      console.log('[pptr] target destroyed:', url.slice(0, 120));
     }
   });
 }
@@ -71,7 +69,6 @@ function safe(fn) { try { return fn(); } catch { return undefined; } }
 
 async function closeBrowserHard(reason = 'manual') {
   if (!browser) return;
-  console.warn('[pptr] closing browser (hard). reason:', reason);
   try {
     const proc = safe(() => browser.process && browser.process());
     try { await browser.close(); } catch {}
@@ -90,7 +87,6 @@ async function launchBrowser() {
   for (let attempt = 1; attempt <= LAUNCH_MAX_RETRIES; attempt++) {
     try {
       const b = await puppeteer.launch(opts);
-      console.log('[pptr] launched. wsEndpoint:', b.wsEndpoint());
       onBrowserEvents(b);
       return b;
     } catch (e) {
@@ -168,7 +164,6 @@ async function safePageDefaults(page) {
 function attachDebugListeners(page, name) {
   page.on('console', (msg) => {
     const type = safe(() => msg.type && msg.type()) || 'log';
-    console.log(`[pptr:${name}:console:${type}]`, msg.text());
   });
   page.on('pageerror', (err) => console.error(`[pptr:${name}:pageerror]`, err));
   page.on('requestfailed', (req) => {
@@ -243,7 +238,6 @@ export function stats() {
 const signals = ['SIGINT', 'SIGTERM'];
 for (const s of signals) {
   process.once(s, async () => {
-    console.log(`[pptr] received ${s}, shutting down browser...`);
     await closeBrowserHard(`signal-${s}`);
     process.exit(0);
   });
