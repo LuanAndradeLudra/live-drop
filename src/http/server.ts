@@ -10,8 +10,9 @@ export function buildServer() {
 
   const allowlist = new Set([
     'https://www.csgo.net',
-    'http://localhost:3000',
-    'http://127.0.0.1:3000'
+    'https://csgo.net/',
+    // 'http://localhost:3000',
+    // 'http://127.0.0.1:3000'
   ]);
 
   app.use(cors({
