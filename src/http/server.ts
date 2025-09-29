@@ -17,6 +17,7 @@ export function buildServer() {
 
   app.use(cors({
     origin(origin, cb) {
+      console.log('[http] cors origin:', origin);
       // requests sem Origin (ex: curl, server-to-server) -> permitir
       if (!origin) return cb(null, true);
       if (allowlist.has(origin)) return cb(null, true);
