@@ -20,12 +20,38 @@
       }
       .live-drop {
         width: 100%;
-        height: 500px;
-        background-color: black;
         display: flex;
         align-items: center;
+        overflow: auto;
+        scrollbar-gutter: stable;
+        background-color: #070A18;
+      }
+      .live-drop::-webkit-scrollbar {
+        width: 8px;
+        height: 8px;
       }
 
+      .live-drop::-webkit-scrollbar-track {
+        background: #222;
+      }
+
+      .live-drop::-webkit-scrollbar-thumb {
+        background: #fb5d09;
+        border-radius: 4px;
+      }
+
+      .live-drop::-webkit-scrollbar-thumb:hover {
+        background: #eb7434;
+      }
+
+      .live-drop::-webkit-scrollbar-corner {
+        background: #222;
+      }
+
+      .live-drop {
+        scrollbar-width: thin;
+        scrollbar-color: #fb5d09 #222;
+      }
       .live-drop .streammer {
         padding: 15px;
       }
@@ -37,6 +63,10 @@
       .drops-area {
         display: flex;
         gap: 15px;
+      }
+
+      .drops-area.hide-background {
+        background: none !important;
       }
 
       .drop {
@@ -188,7 +218,6 @@
       }
 
       .upgrade .logo-balance {
-        width: 120px;
         height: 64px;
         background-position: center;
         background-repeat: no-repeat;
@@ -215,7 +244,7 @@
         background-size: contain;
       }
 
-      .received{
+      .received {
         width: 50%;
       }
 
@@ -236,16 +265,24 @@
   </head>
   <body>
     <div class="live-drop">
-      <div class="streammer">
+      <div class="streammer" id="streammer-logo" style="display: none;">
         <a href="#">
           <img
-            src="https://canaldosaullo.com/assets/images/avatar.png"
-            alt=""
-            class="logo"
+        src="https://canaldosaullo.com/assets/images/avatar.png"
+        alt=""
+        class="logo"
           />
         </a>
       </div>
-      <div class="drops-area"></div>
+      <script>
+        (function() {
+          var params = new URLSearchParams(window.location.search);
+          if (!params.has('hide-logo')) {
+        document.getElementById('streammer-logo').style.display = '';
+          }
+        })();
+      </script>
+      <div class="drops-area ${window.location.search.includes('hide-background') ? ' hide-background' : ''}"></div>
     </div>
 
     <script>
