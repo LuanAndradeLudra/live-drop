@@ -1,99 +1,24 @@
 // src/services/fetch-roll.service.js
 import * as browserPool from './browser-pool.service.js';
 
+/** =========================
+ *  CONFIG
+ * ======================= */
 const OPEN_TAB_MAX_ATTEMPTS = 5;
 const JOB_TIMEOUT_MS = 30_000;
 const LOAD_MORE_MAX_CLICKS = 3;
 
-let userData = {};
-
 const RARITY_HINTS = [
-  'covert','classified','restricted','mil-spec','milspec','rare','uncommon','common',
-  'legendary','epic','mythical','ancient','immortal','arcana','contraband'
+  'covert', 'classified', 'restricted', 'mil-spec', 'milspec',
+  'rare', 'uncommon', 'common', 'legendary', 'epic', 'mythical',
+  'ancient', 'immortal', 'arcana', 'contraband'
 ];
 
-function pickRarityFromClasses(classListLike) {
-  if (!classListLike) return '';
-  const classes = Array.from(classListLike).map(c => String(c).toLowerCase());
-  // tenta por hints conhecidas
-  const found = RARITY_HINTS.find(h => classes.some(c => c.includes(h)));
-  if (found) return found;
-  // fallback: algumas UIs usam "rarity-*" ou "quality-*"
-  const rx = /(?:rarity|quality)[-_]([a-z0-9]+)/i;
-  for (const c of classes) {
-    const m = c.match(rx);
-    if (m && m[1]) return m[1].toLowerCase();
-  }
-  return classes[classes.length - 1] || '';
-}
+let userData = {};
 
-async function getCaseRarityFromProfile(page, rollId) {
-  return page.evaluate(({ wanted, RARITY_HINTS }) => {
-    const pickRarityFromClasses = (cl) => {
-      const classes = Array.from(cl || []).map(c => String(c).toLowerCase());
-      const found = RARITY_HINTS.find(h => classes.some(c => c.includes(h)));
-      if (found) return found;
-      const rx = /(?:rarity|quality)[-_]([a-z0-9]+)/i;
-      for (const c of classes) {
-        const m = c.match(rx);
-        if (m && m[1]) return m[1].toLowerCase();
-      }
-      return classes[classes.length - 1] || '';
-    };
-
-    const grid = document.querySelector('.grid_drops');
-    if (!grid) return { rarity: '', rarityClassSource: '' };
-
-    // âncora com rollID
-    const anchors = grid.querySelectorAll('a.skin__state.skin__state_provably[href*="rollID="]');
-    for (const a of anchors) {
-      const href = a.getAttribute('href') || '';
-      const m = href.match(/rollID=([^&]+)/);
-      const found = m && m[1];
-      if (found !== wanted) continue;
-
-      // sobe pro card .skin (ou contêiner principal)
-      const card = a.closest('.skin') || a.closest('.grid_drops-item') || a.parentElement;
-      if (!card) return { rarity: '', rarityClassSource: '' };
-
-      // tenta em diferentes níveis
-      const candidates = [
-        card,
-        card.querySelector('.skin__name'),
-        card.querySelector('.skin__title'),
-        card.querySelector('.skin__img'),
-        card.querySelector('[class*="rarity"], [class*="quality"]'),
-      ].filter(Boolean);
-
-      for (const el of candidates) {
-        const r = pickRarityFromClasses(el.classList);
-        if (r) return { rarity: r, rarityClassSource: el.className || '' };
-      }
-
-      return { rarity: '', rarityClassSource: card.className || '' };
-    }
-    return { rarity: '', rarityClassSource: '' };
-  }, { wanted: rollId, RARITY_HINTS });
-}
-
-async function getUserData(page) {
-  for (let attempt = 1; attempt <= 5; attempt++) {
-    const data = await page.evaluate(() => {
-      const clean = (s) => (typeof s === 'string' ? s.replace(/\s+/g, ' ').trim() : s);
-      return {
-        userId:   clean(document.querySelector(".user__id")?.textContent.replace("ID: ", "") || ''),
-        userName: clean(document.querySelector(".user__name")?.textContent || ''),
-        userImage: clean(document.querySelector(".user__img > img")?.src || ''),
-      };
-    });
-    if (data.userId && data.userName && data.userImage) {
-      return data;
-    }
-    await waitMs(page, 1000);
-  }
-  return { userId: '', userName: '', userImage: '' };
-}
-
+/** =========================
+ *  UTILS
+ * ======================= */
 function waitMs(page, ms) {
   if (page && typeof page.waitForTimeout === 'function') {
     return page.waitForTimeout(ms);
@@ -120,9 +45,6 @@ function withTimeout(promiseFactory, ms) {
   };
 }
 
-/* =========================
- * HELPERS COMUNS
- * =======================*/
 async function hideMobileNav(page) {
   await page.evaluate(() => {
     const nav = document.querySelector('.mobile-nav');
@@ -149,14 +71,80 @@ async function waitMoreBlocks(page, prevCount, timeout = 5000) {
       const curr = document.querySelectorAll('.skins-block, .skin').length;
       return curr > prev;
     }, { timeout, polling: 'mutation' }, prevCount);
-  } catch (err) { 
-    console.log(err)
-   }
+  } catch (err) {
+    console.log('[waitMoreBlocks]', err);
+  }
 }
 
-/* =========================
- * UPGRADE FLOW
- * =======================*/
+/** =========================
+ *  USER DATA (ROBUST)
+ * ======================= */
+async function getUserDataRobust(page, {
+  maxTries = 12,
+  intervalMs = 300,
+  waitSelectorTimeout = 800
+} = {}) {
+  const tryOnce = async () => page.evaluate(() => {
+    const clean = (s) => (typeof s === 'string' ? s.replace(/\s+/g, ' ').trim() : s);
+
+    const idText =
+      document.querySelector('.user__id')?.textContent ||
+      document.querySelector('[data-user-id]')?.getAttribute('data-user-id') ||
+      '';
+
+    const userId = clean(idText.replace(/^ID:\s*/i, '') || '');
+
+    const userName =
+      clean(document.querySelector('.user__name')?.textContent || '') ||
+      clean(document.querySelector('.user__nickname')?.textContent || '');
+
+    const userImage =
+      clean(document.querySelector('.user__img > img')?.src || '') ||
+      clean(document.querySelector('img.avatar, img.user-avatar')?.src || '');
+
+    return { userId, userName, userImage };
+  });
+
+  const waitAnyProfileMarker = async () => {
+    const candidates = ['.user__id', '.user__name', '.user__img img', '.grid_drops'];
+    for (const sel of candidates) {
+      try { await page.waitForSelector(sel, { timeout: waitSelectorTimeout }); return; } catch {}
+    }
+  };
+
+  let last = { userId: '', userName: '', userImage: '' };
+  for (let i = 1; i <= maxTries; i++) {
+    await waitAnyProfileMarker();
+    last = await tryOnce();
+
+    if (last.userId || (last.userName && last.userImage)) {
+      return { ...last, _status: `ok@try${i}` };
+    }
+
+    try {
+      await page.evaluate(() => {
+        window.scrollBy({ top: 200, behavior: 'instant' });
+        window.scrollBy({ top: -200, behavior: 'instant' });
+      });
+    } catch {}
+
+    await waitMs(page, intervalMs);
+  }
+
+  return { ...last, _status: 'partial-or-empty' };
+}
+
+async function maybeRefetchUserData(page, prevUserData) {
+  const isGood = (u) => !!(u && (u.userId || (u.userName && u.userImage)));
+  if (isGood(prevUserData)) return prevUserData;
+
+  const fresh = await getUserDataRobust(page, { maxTries: 6, intervalMs: 250 });
+  return isGood(fresh) ? fresh : prevUserData;
+}
+
+/** =========================
+ *  UPGRADE FLOW
+ * ======================= */
 async function openUpgradesWithRetry(page, maxAttempts = OPEN_TAB_MAX_ATTEMPTS) {
   const selector =
     'button.tabs__tab.js-user-items-tab[selectblock="upgrades"], [selectblock="upgrades"].js-user-items-tab';
@@ -181,8 +169,28 @@ async function openUpgradesWithRetry(page, maxAttempts = OPEN_TAB_MAX_ATTEMPTS) 
 }
 
 async function parseUpgradeBlock(page, rollId, baseUser) {
-  return page.evaluate((wanted, baseUser) => {
+  return page.evaluate((wanted, baseUser, RARITY_HINTS) => {
     const clean = (s) => (typeof s === 'string' ? s.replace(/\s+/g, ' ').trim() : s);
+
+    // helper local (vive dentro do evaluate)
+    const pickRarity = (el) => {
+      if (!el) return '';
+      const classes = Array.from(el.classList || []).map(c => String(c).toLowerCase());
+
+      // 1) tenta por hints conhecidas
+      const found = RARITY_HINTS.find(h => classes.some(c => c.includes(h)));
+      if (found) return found;
+
+      // 2) tenta padrões "rarity-*" / "quality-*"
+      const rx = /(?:rarity|quality)[-_]([a-z0-9]+)/i;
+      for (const c of classes) {
+        const m = c.match(rx);
+        if (m && m[1]) return m[1].toLowerCase();
+      }
+
+      // 3) fallback: última classe
+      return classes[classes.length - 1] || '';
+    };
 
     const blocks = Array.from(document.querySelectorAll('.skins-block'));
     for (const block of blocks) {
@@ -211,7 +219,7 @@ async function parseUpgradeBlock(page, rollId, baseUser) {
           name:   clean(skin.querySelector('.skins-block__name')?.textContent || ''),
           type:   clean(skin.querySelector('.skins-block__type')?.textContent || ''),
           image:  clean(skin.querySelector('.skins-block__item-img')?.src || ''),
-          rarity: clean((skin.classList && skin.classList[skin.classList.length - 1]) || ''),
+          rarity: pickRarity(skin),
         });
       });
 
@@ -220,7 +228,7 @@ async function parseUpgradeBlock(page, rollId, baseUser) {
         name:   clean(receivedSkin.querySelector('.skins-block__name')?.textContent || ''),
         type:   clean(receivedSkin.querySelector('.skins-block__type')?.textContent || ''),
         image:  clean(receivedSkin.querySelector('.skins-block__item-img')?.src || ''),
-        rarity: clean((receivedSkin.classList && receivedSkin.classList[receivedSkin.classList.length - 1]) || ''),
+        rarity: pickRarity(receivedSkin),
       } : null;
 
       return {
@@ -236,7 +244,7 @@ async function parseUpgradeBlock(page, rollId, baseUser) {
       };
     }
     return null;
-  }, rollId, baseUser);
+  }, rollId, baseUser, RARITY_HINTS);
 }
 
 async function findUpgradeWithLoadMore(page, rollId, maxClicks = LOAD_MORE_MAX_CLICKS, baseUser = {}) {
@@ -257,23 +265,114 @@ async function findUpgradeWithLoadMore(page, rollId, maxClicks = LOAD_MORE_MAX_C
     }
     return null;
   } catch (err) {
-    console.log(err);
+    console.log('[findUpgradeWithLoadMore]', err);
     return null;
   }
 }
 
-/* =========================
- * CASE FLOW
- * =======================*/
+// Navega para o Provably a partir do bloco de upgrade
+async function openUpgradeProvably(page, rollId) {
+  await Promise.all([
+    page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 12000 }),
+    page.evaluate((wanted) => {
+      const anchors = document.querySelectorAll('a.skins-block__item-pf[href*="rollID="]');
+      for (const a of anchors) {
+        const href = a.getAttribute('href') || '';
+        const m = href.match(/rollID=([^&]+)/);
+        const found = m && m[1];
+        if (found === wanted) {
+          a.click();
+          return;
+        }
+      }
+    }, rollId),
+  ]);
+}
+
+/** =========================
+ *  CASE FLOW
+ * ======================= */
 async function openCaseGridWithRetry(page, maxAttempts = OPEN_TAB_MAX_ATTEMPTS) {
-  for (let i = 1; i <= maxAttempts; i++) {
+  const hasGrid = async () => {
     try {
-      await page.waitForSelector('.grid_drops', { timeout: 1200 });
-      return;
+      await page.waitForSelector('.grid_drops', { timeout: 800 });
+      return true;
+    } catch { return false; }
+  };
+
+  const tryClickToShowGrid = async () => {
+    return page.evaluate(() => {
+      const click = (el) => { if (el) { el.click(); return true; } return false; };
+
+      const selectors = [
+        'button[selectblock="drops"]',
+        '[selectblock="drops"].js-user-items-tab',
+        'a[href*="#drops"]',
+        'a[data-target="drops"]',
+        'button[data-target="drops"]',
+        '.user__tab[data-tab="drops"]',
+        '.tabs__tab[href*="drops"]',
+        '.tabs__tab[data-tab="drops"]',
+      ];
+
+      for (const sel of selectors) {
+        const el = document.querySelector(sel);
+        if (el) {
+          el.scrollIntoView({ block: 'center' });
+          if (click(el)) return 'clicked-selector';
+        }
+      }
+
+      const textHints = [
+        /(?:drops|recent drops|case drops|my drops)/i,
+        /(?:meus ganhos|histórico|quedas|resultados)/i,
+      ];
+
+      const candidates = Array.from(document.querySelectorAll('a, button, .tabs__tab, .action'));
+      for (const el of candidates) {
+        const txt = (el.textContent || '').replace(/\s+/g, ' ').trim();
+        if (!txt) continue;
+        if (textHints.some((rx) => rx.test(txt))) {
+          el.scrollIntoView({ block: 'center' });
+          if (click(el)) return 'clicked-text';
+        }
+      }
+
+      const activeTab = document.querySelector('.tabs__tab.active, .js-user-items-tab.active');
+      if (activeTab) {
+        activeTab.scrollIntoView({ block: 'center' });
+        if (click(activeTab)) return 'clicked-active';
+      }
+
+      return 'no-click';
+    });
+  };
+
+  const nudgeScroll = async () => {
+    try {
+      await page.evaluate(async () => {
+        const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+        window.scrollBy({ top: 200, behavior: 'instant' });
+        await sleep(50);
+        window.scrollBy({ top: -200, behavior: 'instant' });
+      });
     } catch {}
+  };
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    if (await hasGrid()) return;
+
+    await tryClickToShowGrid();
+
     await waitMs(page, 250);
+    if (await hasGrid()) return;
+
+    await nudgeScroll();
+    await waitMs(page, 250);
+    if (await hasGrid()) return;
   }
-  throw new Error('Grid de cases (.grid_drops) não encontrada');
+
+  throw new Error('Grid de cases (.grid_drops) não encontrada após múltiplas tentativas');
 }
 
 async function hasCaseAnchor(page, rollId) {
@@ -292,7 +391,6 @@ async function hasCaseAnchor(page, rollId) {
 }
 
 async function clickCaseAnchor(page, rollId) {
-  // clica e espera navegação
   await Promise.all([
     page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 12000 }),
     page.evaluate((wanted) => {
@@ -312,6 +410,123 @@ async function clickCaseAnchor(page, rollId) {
   ]);
 }
 
+async function getCaseRarityFromProfile(page, rollId) {
+  return page.evaluate(({ wanted, RARITY_HINTS }) => {
+    const pickFrom = (cl) => {
+      const classes = Array.from(cl || []).map(c => String(c).toLowerCase());
+      const found = RARITY_HINTS.find(h => classes.some(c => c.includes(h)));
+      if (found) return found;
+      const rx = /(?:rarity|quality)[-_]([a-z0-9]+)/i;
+      for (const c of classes) {
+        const m = c.match(rx);
+        if (m && m[1]) return m[1].toLowerCase();
+      }
+      return classes[classes.length - 1] || '';
+    };
+
+    const grid = document.querySelector('.grid_drops');
+    if (!grid) return { rarity: '', rarityClassSource: '' };
+
+    const anchors = grid.querySelectorAll('a.skin__state.skin__state_provably[href*="rollID="]');
+    for (const a of anchors) {
+      const href = a.getAttribute('href') || '';
+      const m = href.match(/rollID=([^&]+)/);
+      const found = m && m[1];
+      if (found !== wanted) continue;
+
+      const card = a.closest('.skin') || a.closest('.grid_drops-item') || a.parentElement;
+      if (!card) return { rarity: '', rarityClassSource: '' };
+
+      const candidates = [
+        card,
+        card.querySelector('.skin__name'),
+        card.querySelector('.skin__title'),
+        card.querySelector('.skin__img'),
+        card.querySelector('[class*="rarity"], [class*="quality"]'),
+      ].filter(Boolean);
+
+      for (const el of candidates) {
+        const r = pickFrom(el.classList);
+        if (r) return { rarity: r, rarityClassSource: el.className || '' };
+      }
+
+      return { rarity: '', rarityClassSource: card.className || '' };
+    }
+    return { rarity: '', rarityClassSource: '' };
+  }, { wanted: rollId, RARITY_HINTS });
+}
+
+async function findCaseAndOpenProvably(page, rollId, maxClicks = LOAD_MORE_MAX_CLICKS) {
+  const initialInfo = await getCaseRarityFromProfile(page, rollId);
+  if (await hasCaseAnchor(page, rollId)) {
+    await clickCaseAnchor(page, rollId);
+    return { opened: true, rarityInfo: initialInfo };
+  }
+
+  for (let i = 0; i < maxClicks; i++) {
+    const before = await page.evaluate(() =>
+      document.querySelectorAll('.grid_drops .skin').length
+    );
+    const clicked = await clickLoadMoreOnce(page);
+    if (!clicked) break;
+
+    await waitMs(page, 250);
+    try {
+      await page.waitForFunction((prev) => {
+        const curr = document.querySelectorAll('.grid_drops .skin').length;
+        return curr > prev;
+      }, { timeout: 5000, polling: 'mutation' }, before);
+    } catch {}
+
+    const rarityInfo = await getCaseRarityFromProfile(page, rollId);
+    if (await hasCaseAnchor(page, rollId)) {
+      await clickCaseAnchor(page, rollId);
+      return { opened: true, rarityInfo };
+    }
+  }
+
+  return { opened: false, rarityInfo: { rarity: '', rarityClassSource: '' } };
+}
+
+/** =========================
+ *  PROVABLY (COMUM)
+ * ======================= */
+async function getRollNumberFromProvably(page) {
+  await page.waitForSelector('.layout-provably-fair__title', { timeout: 10000 });
+  const provablyUrl = page.url();
+
+  const rollNumber = await page.evaluate(() => {
+    const clean = (s) => (typeof s === 'string' ? s.replace(/\s+/g, ' ').trim() : s);
+    const parseNum = (s) => {
+      if (!s) return null;
+      const t = String(s).replace(/[^\d.,-]/g, '').replace(',', '.').trim();
+      const n = parseFloat(t);
+      return Number.isFinite(n) ? n : null;
+    };
+
+    const title = document.querySelector('.layout-provably-fair__title');
+    const txt = clean(title?.textContent || '');
+
+    const patterns = [
+      /roll\s*[:\-–]\s*([\d.,]+)/i,
+      /resultado\s*[:\-–]\s*([\d.,]+)/i,
+      /jogada\s*[:\-–]\s*([\d.,]+)/i,
+    ];
+    for (const rx of patterns) {
+      const m = txt.match(rx);
+      if (m) return parseNum(m[1]);
+    }
+
+    const anyNum = txt.match(/([\d][\d.,]+)/);
+    return anyNum ? parseNum(anyNum[1]) : null;
+  });
+
+  return { rollNumber, provablyUrl };
+}
+
+/** =========================
+ *  PARSE PROVABLY (CASE)
+ * ======================= */
 async function parseProvablyCasePage(page, rollId, baseUser) {
   await page.waitForSelector('.layout-provably-fair__title', { timeout: 10000 });
   const provablyUrl = page.url();
@@ -338,14 +553,12 @@ async function parseProvablyCasePage(page, rollId, baseUser) {
       return '';
     };
 
-    // Roll number
     const rollTitle = document.querySelector('.layout-provably-fair__title');
     const rollNumber = (() => {
-      const m = (rollTitle?.textContent || '').match(/Roll:\s*([\d.,]+)/i);
+      const m = (rollTitle?.textContent || '').match(/Roll\s*[:\-–]\s*([\d.,]+)/i);
       return m ? parseNum(m[1]) : null;
     })();
 
-    // Case info
     const caseImgEl   = document.querySelector('img.layout-provably-fair__type-img');
     const caseNameEl  = document.querySelector('.layout-provably-fair__type-title');
     const casePriceEl = document.querySelector('.layout-provably-fair__type-value.price');
@@ -355,18 +568,14 @@ async function parseProvablyCasePage(page, rollId, baseUser) {
     const casePrice = parseNum(casePriceEl?.textContent || '');
     const caseCurrency = currencyFrom(casePriceEl);
 
-    // ====== DROP ATUAL (robusto) ======
-    // 1) acha a row "atual" com vários fallbacks
     let row =
       document.querySelector('tr.current-roll-drop, tr.current-drop, tr.is-current, tr.table-big__row_current') ||
       document.querySelector('.table-big tbody tr');
 
-    // 2) pega imagem e ALT (fallback pro nome)
     const imgEl = row?.querySelector('img.table-big__item-img, .table-big__item-img img');
     const dropImg = imgEl?.src || '';
     const imgAlt  = clean(imgEl?.alt || '');
 
-    // 3) pega "type" e "name" com múltiplos seletores
     const dropType = row ? qText(row, `
       .table-big__first-type,
       .table-big__type,
@@ -380,22 +589,18 @@ async function parseProvablyCasePage(page, rollId, baseUser) {
       .table-big__first .name
     `) : '';
 
-    // 4) fallback total: se nada deu, usa o bloco inteiro ou o alt
     if (!dropType && !dropNameMain && row) {
       dropNameMain = qText(row, '.table-big__first, .table-big__title, .table-big__col_first') || imgAlt;
     }
 
-    // 5) monta o nome final
     let resolvedName = dropNameMain;
     if (dropType && dropNameMain) resolvedName = `${dropType} | ${dropNameMain}`;
-    if (!resolvedName) resolvedName = imgAlt; // último recurso
+    if (!resolvedName) resolvedName = imgAlt;
 
-    // preço e moeda
     const dropPriceEl = row?.querySelector('.table-big__accent.price, .price.table-big__accent');
     const dropPrice = parseNum(dropPriceEl?.textContent || '');
     const dropCurrency = currencyFrom(dropPriceEl);
 
-    // odds e range
     let oddsPercent = null;
     let range = null;
     if (row) {
@@ -431,49 +636,26 @@ async function parseProvablyCasePage(page, rollId, baseUser) {
   }, rollId, provablyUrl, baseUser);
 }
 
-
-async function findCaseAndOpenProvably(page, rollId, maxClicks = LOAD_MORE_MAX_CLICKS) {
-  // tenta direto no grid atual
-  const initialInfo = await getCaseRarityFromProfile(page, rollId);
-  if (await hasCaseAnchor(page, rollId)) {
-    // já temos rarity do perfil — agora clica
-    await clickCaseAnchor(page, rollId);
-    return { opened: true, rarityInfo: initialInfo };
-  }
-
-  // precisa carregar mais
-  for (let i = 0; i < maxClicks; i++) {
-    const before = await page.evaluate(() =>
-      document.querySelectorAll('.grid_drops .skin').length
-    );
-    const clicked = await clickLoadMoreOnce(page);
-    if (!clicked) break;
-
-    await waitMs(page, 250);
+async function gotoWithRetry(page, url, tries = 2) {
+  let lastErr;
+  for (let i = 0; i < tries; i++) {
     try {
-      await page.waitForFunction((prev) => {
-        const curr = document.querySelectorAll('.grid_drops .skin').length;
-        return curr > prev;
-      }, { timeout: 5000, polling: 'mutation' }, before);
-    } catch { /* ignore */ }
-
-    // tenta pegar rarity após carregar mais itens
-    const rarityInfo = await getCaseRarityFromProfile(page, rollId);
-    if (await hasCaseAnchor(page, rollId)) {
-      await clickCaseAnchor(page, rollId);
-      return { opened: true, rarityInfo };
+      await page.goto(url, { waitUntil: 'networkidle2', timeout: 30000 });
+      return;
+    } catch (e) {
+      lastErr = e;
+      await waitMs(page, 500 + i * 500);
     }
   }
-
-  return { opened: false, rarityInfo: { rarity: '', rarityClassSource: '' } };
+  throw lastErr;
 }
 
-/* =========================
- * API PRINCIPAL
- * =======================*/
+/** =========================
+ *  API PRINCIPAL
+ * ======================= */
 /**
- * Para type='upgrade': retorna objeto com balances, chance e itens (mantém html do bloco).
- * Para type='case': vai até a página Provably Fair e retorna case/drop + rollNumber.
+ * Para type='upgrade': pega dados no perfil e, em seguida, entra no Provably para capturar rollNumber/URL.
+ * Para type='case': passa no grid do perfil (pega rarity), navega ao Provably e parseia case/drop + rollNumber.
  */
 export async function fetchRollBlockHTML({
   userId,
@@ -494,34 +676,45 @@ export async function fetchRollBlockHTML({
     await page.goto(url, { waitUntil: 'networkidle2', timeout: 30_000 });
     await hideMobileNav(page);
 
-    // Captura dados do usuário ainda no perfil
-    userData = await getUserData(page);
+    // Captura robusta no perfil
+    userData = await getUserDataRobust(page);
 
     if (type === 'upgrade') {
       await openUpgradesWithRetry(page);
       await page.waitForSelector('.skins-block', { timeout: 10_000 });
 
+      userData = await maybeRefetchUserData(page, userData);
+
+      // 1) parse do bloco de upgrade no perfil
       const data = await findUpgradeWithLoadMore(page, rollId, LOAD_MORE_MAX_CLICKS, userData);
       if (!data) throw new Error(`RollID ${rollId} não encontrado (upgrade)`);
-      return data;
+
+      // 2) entra no Provably desse roll para obter rollNumber/URL
+      await openUpgradeProvably(page, rollId);
+      const { rollNumber, provablyUrl } = await getRollNumberFromProvably(page);
+
+      return {
+        ...data,
+        rollNumber: rollNumber ?? null,
+        provablyUrl: provablyUrl || null,
+        _provablyFetched: true,
+      };
     }
 
     // === type === 'case' ===
     await openCaseGridWithRetry(page);
 
-    // Coleta rarity no grid do perfil ANTES de ir para o Provably
-    const { opened, rarityInfo } = await findCaseAndOpenProvably(
-      page,
-      rollId,
-      LOAD_MORE_MAX_CLICKS
-    );
+    userData = await maybeRefetchUserData(page, userData);
+
+    // Coleta rarity no perfil e navega para o Provably
+    const { opened, rarityInfo } = await findCaseAndOpenProvably(page, rollId, LOAD_MORE_MAX_CLICKS);
     if (!opened) throw new Error(`RollID ${rollId} não encontrado (case)`);
 
-    // Agora estamos na página Provably; parse detalhado
+    // Parse detalhado do Provably
     const data = await parseProvablyCasePage(page, rollId, userData);
     if (!data) throw new Error('Falha ao parsear Provably Fair (case)');
 
-    // Injeta rarity coletada do perfil (mantém a do Provably se existir)
+    // Injeta rarity coletada do perfil (mantém a do Provably se houver)
     return {
       ...data,
       drop: {
@@ -530,6 +723,7 @@ export async function fetchRollBlockHTML({
       },
       _raritySource: rarityInfo?.rarity ? 'profile_grid' : (data.drop?.rarity ? 'provably' : ''),
       _rarityClassSource: rarityInfo?.rarityClassSource || '',
+      _userDataStatus: userData?._status || 'unknown',
     };
   };
 
