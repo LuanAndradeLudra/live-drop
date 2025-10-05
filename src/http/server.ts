@@ -48,6 +48,10 @@ export function buildServer() {
     res.sendFile(path.join(process.cwd(), 'public', 'live-drop.html'));
   });
 
+   app.get('/live-drop-streammer', (_req, res) => {
+    res.sendFile(path.join(process.cwd(), 'public', 'live-drop-streammer.html'));
+  });
+
   // erro genérico
   app.use((err: any, _req: any, res: any, _next: any) => {
     console.error('[http] error:', err);

@@ -1,0 +1,377 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8" />
+    <title>Live Drop – Streamer</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <style>
+      * {
+        padding: 0;
+        margin: 0;
+        font-family: "Gill Sans", "Gill Sans MT", Calibri, "Trebuchet MS",
+          sans-serif;
+      }
+      a {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        text-decoration: none;
+        color: white;
+      }
+      .live-drop {
+        width: 100%;
+        display: flex;
+        align-items: center;
+        overflow: hidden; /* não queremos barra nessa overlay */
+      }
+      /* Scrollbar mantida caso queira voltar a usar overflow:auto */
+      .live-drop::-webkit-scrollbar { width: 8px; height: 8px; }
+      .live-drop::-webkit-scrollbar-track { background: #222; }
+      .live-drop::-webkit-scrollbar-thumb { background: #fb5d09; border-radius: 4px; }
+      .live-drop::-webkit-scrollbar-thumb:hover { background: #eb7434; }
+      .live-drop::-webkit-scrollbar-corner { background: #222; }
+      .live-drop { scrollbar-width: thin; scrollbar-color: #fb5d09 #222; }
+
+      .live-drop .streammer { padding: 15px; }
+      .streammer .logo { width: 75px; }
+
+      .drops-area {
+        display: flex;
+        gap: 15px;
+        width: 100%;
+        padding: 15px;
+      }
+      .drops-area.hide-background { background: none !important; }
+
+      .drop {
+        width: 300px;
+        color: white;
+        display: flex;
+        flex-direction: column;
+        padding: 6px 0;
+        border-radius: 8px;
+        box-shadow: 0 0 10px rgba(0, 0, 0, 0.5);
+        overflow: hidden;
+        opacity: 0;
+        transform: translateY(8px) scale(0.98);
+        transition: opacity .25s ease, transform .25s ease, filter .25s ease;
+      }
+
+.drop .coins-mask {
+  position: absolute;
+  inset: -10%;              /* sangra um pouco pra não cortar nas bordas */
+  z-index: 5;               /* acima do conteúdo do card */
+  pointer-events: none;     /* não bloqueia cliques nos links do card */
+  background-image: url('/assets/raining-coins.gif'); /* <-- coloque o GIF direto aqui */
+  background-repeat: repeat;  /* repete pra cobrir todo o card */
+  background-size: 240px auto; /* ajuste o tamanho da moeda */
+}
+
+      .drop.show { opacity: 1; transform: translateY(0) scale(1); }
+      .drop.hide { opacity: 0; transform: translateY(6px) scale(0.98); filter: blur(1px); }
+
+      .drop-common     { background: #89c0db; border: 2px solid #89c0db; }
+      .drop-uncommon   { background: #009ae2; border: 2px solid #89c0db; }
+      .drop-milspec    { background: #006ae2; border: 2px solid #89c0db; }
+      .drop-restricted { background: #8000e2; border: 2px solid #d8a8fd; }
+      .drop-classified { background: #e200a0; border: 2px solid #f879d2; }
+      .drop-covert     { background: #e23000; border: 2px solid #e23000; }
+      .drop-rare       { background: #ffc600; border: 2px solid #ffc600; }
+
+      .drop .top-area {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 0 12px;
+      }
+      .drop .user-area { display: flex; gap: 8px; }
+      .drop .user-area .logo img { width: 30px; border-radius: 6px; }
+      .drop .user-area .name { max-width: 100px; font-size: 12px; font-weight: 700; }
+      .drop .top-area .multiplier { font-size: 18px; font-weight: 900; text-align: right; }
+      .drop .top-area .provably { font-size: 10px; color: #ffffff77; text-align: right; }
+
+      .divider { width: 90%; margin: 6px auto; height: 2px; background-color: #ffffff33; }
+      .vertical-divider { width: 2px; height: 120px; background-color: #ffffff33; }
+
+      .skins-section { display: flex; justify-content: space-evenly; align-items: center; }
+      .skins-section .name { color: #ffffff99; font-size: 10px; margin: 6px 0; text-align: center; }
+      .skins-section .price { font-weight: 900; font-size: 14px; text-align: center; }
+
+      .upgrade { width: 50%; height: 100%; display: flex; flex-direction: column; justify-content: space-evenly; text-align: center; }
+      .upgrade-grid { --ug-gap: 8px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: center; gap: var(--ug-gap); }
+      .upgrade-grid > .upgrade-item:last-child:nth-child(odd) { grid-column: 1 / -1; justify-self: center; width: calc((100% - var(--ug-gap)) / 2); }
+      .upgrade .balance { font-weight: 900; font-size: 14px; text-align: center; }
+      .upgrade .logo { width: 130px; height: 74px; background-position: center; background-repeat: no-repeat; background-size: contain; }
+      .upgrade .logo-balance { height: 64px; background-position: center; background-repeat: no-repeat; background-size: contain; margin-top: 10px; }
+      .upgrade .logo-grid { background-position: center; background-repeat: no-repeat; background-size: contain; }
+
+      .case { width: 50%; display: flex; flex-direction: column; justify-content: start; }
+      .case .logo { height: 74px; background-position: center; background-repeat: no-repeat; background-size: contain; }
+
+      .received { width: 50%; }
+      .received .logo { height: 74px; background-position: center; background-repeat: no-repeat; background-size: contain; }
+
+      .balance-absolute { font-weight: 800; font-size: 12px; margin-left: 8px; text-align: center; }
+    </style>
+  </head>
+  <body>
+    <div class="live-drop">
+      <script>
+        (function () {
+          var params = new URLSearchParams(window.location.search);
+          if (!params.has("hide-logo")) {
+            document.getElementById("streammer-logo").style.display = "";
+          }
+        })();
+      </script>
+      <div class="drops-area ${window.location.search.includes('hide-background') ? ' hide-background' : ''}"></div>
+    </div>
+
+
+    <script>
+      (function () {
+        var dropsArea = document.querySelector(".drops-area");
+        var DISPLAY_DURATION_MS = 10_000; // 10s visível
+        var queue = [];
+        var busy = false;
+
+        // Mesmo render do seu viewer (mantendo layout)
+        function renderDropHTML(drop) {
+          let rarityClass = "";
+          if (drop.type === "case" && drop.drop && drop.drop.rarity) {
+            rarityClass = `drop-${String(drop.drop.rarity).toLowerCase()}`;
+          } else if (
+            drop.type === "upgrade" &&
+            drop.receivedSkinsFormatted &&
+            drop.receivedSkinsFormatted.rarity
+          ) {
+            rarityClass = `drop-${String(drop.receivedSkinsFormatted.rarity).toLowerCase()}`;
+          }
+
+          if (drop.type === "case") {
+            return `
+              <div class="drop ${rarityClass}">
+                <div class="top-area">
+                  <div class="user-area">
+                    <a href="${"https://csgo.net/user/" + drop.userId}">
+                      <div class="logo"><img src="${drop.userImage}" alt="" /></div>
+                      <div class="name">${drop.userName}</div>
+                    </a>
+                  </div>
+                  <div class="multiplier">${(
+                    Number(drop.drop?.price || 0) / Number(drop.case?.price || 1)
+                  ).toFixed(2)}x<br /><div class="provably">${drop.rollNumber ?? ""}</div></div>
+                </div>
+                <div class="divider"></div>
+                <div class="skins-section">
+                  <div class="case">
+                    <div class="logo" style="background-image: url('${drop.case.image}');"></div>
+                    <div class="name">${String(drop.case.name || "").toUpperCase()}</div>
+                    <div class="price">$ ${Number(drop.case.price || 0).toFixed(2)}</div>
+                  </div>
+                  <div class="vertical-divider"></div>
+                  <div class="received">
+                    <div class="logo" style="background-image: url('${drop.drop.image}');"></div>
+                    <div class="name">${drop.drop.name}</div>
+                    <div class="price">$ ${Number(drop.drop.price || 0).toFixed(2)}</div>
+                  </div>
+                </div>
+                <div class="coins-mask"></div>
+              </div>
+            `;
+          }
+
+          // upgrade
+          if ((drop.usedSkinsFormatted || []).length === 0) {
+            return `
+              <div class="drop ${rarityClass}">
+                <div class="top-area">
+                  <div class="user-area">
+                    <a href="${"https://csgo.net/user/" + drop.userId}">
+                      <div class="logo"><img src="${drop.userImage}" alt="" /></div>
+                      <div class="name">${drop.userName}</div>
+                    </a>
+                  </div>
+                  <div class="multiplier">${drop.chance || ""}<br /> <div class="provably">${drop.rollNumber ?? ""}</div></div>
+                </div>
+                <div class="divider"></div>
+                <div class="skins-section">
+                  <div class="upgrade">
+                    <div class="upgrade-item">
+                      <div class="logo-balance" style="background-image: url('https://csgo.net/public/img/other/upgrade/balance.png?v=5');"></div>
+                      <div class="name">Balance</div>
+                    </div>
+                    <span class="balance">$ ${Number(drop.firstValue || 0).toFixed(2)}</span>
+                  </div>
+                  <div class="vertical-divider"></div>
+                  <div class="received">
+                    <div class="logo" style="background-image: url('${drop.receivedSkinsFormatted.image}');"></div>
+                    <div class="name">${drop.receivedSkinsFormatted.type} - ${drop.receivedSkinsFormatted.name}</div>
+                    <div class="price">$ ${Number(drop.receivedBalance || 0).toFixed(2)}</div>
+                  </div>
+                </div>
+                <div class="coins-mask"></div>
+              </div>
+            `;
+          } else if (drop.usedSkinsFormatted.length === 1) {
+            const usedSkin = drop.usedSkinsFormatted[0];
+            return `
+              <div class="drop ${rarityClass}">
+                <div class="top-area">
+                  <div class="user-area">
+                    <a href="${"https://csgo.net/user/" + drop.userId}">
+                      <div class="logo"><img src="${drop.userImage}" alt="" /></div>
+                      <div class="name">${drop.userName}</div>
+                    </a>
+                  </div>
+                  <div class="multiplier">${drop.chance || ""}<br /> <div class="provably">${drop.rollNumber ?? ""}</div></div>
+                </div>
+                <div class="divider"></div>
+                <div class="skins-section">
+                  <div class="upgrade">
+                    <div class="upgrade-item">
+                      <div class="logo" style="background-image: url('${usedSkin.image}');"></div>
+                      <div class="name">${usedSkin.type} - ${usedSkin.name}</div>
+                    </div>
+                    <div class="balance-absolute">$ ${Number(drop.firstValue || 0).toFixed(2)} ${
+                      drop.secondValue && Number(drop.secondValue) > 0
+                        ? "+ Balance $ " + Number(drop.secondValue).toFixed(2)
+                        : ""
+                    }</div>
+                  </div>
+                  <div class="vertical-divider"></div>
+                  <div class="received">
+                    <div class="logo" style="background-image: url('${drop.receivedSkinsFormatted.image}');"></div>
+                    <div class="name">${drop.receivedSkinsFormatted.type} - ${drop.receivedSkinsFormatted.name}</div>
+                    <div class="price">$ ${Number(drop.receivedBalance || 0).toFixed(2)}</div>
+                  </div>
+                </div>
+                <div class="coins-mask"></div>
+              </div>
+            `;
+          } else {
+            const usedSkinsGrid = drop.usedSkinsFormatted.map(
+              (skin) => `
+                <div class="upgrade-item">
+                  <div class="logo-grid" style="background-image: url('${skin.image}'); width: 80px; height: 50px;"></div>
+                </div>
+              `
+            ).join("");
+
+            return `
+              <div class="drop ${rarityClass}">
+                <div class="top-area">
+                  <div class="user-area">
+                    <a href="${"https://csgo.net/user/" + drop.userId}">
+                      <div class="logo"><img src="${drop.userImage}" alt="" /></div>
+                      <div class="name">${drop.userName}</div>
+                    </a>
+                  </div>
+                  <div class="multiplier">${drop.chance || ""}<br /> <div class="provably">${drop.rollNumber ?? ""}</div></div>
+                </div>
+                <div class="divider"></div>
+                <div class="skins-section">
+                  <div class="upgrade">
+                    <div class="upgrade-grid">${usedSkinsGrid}</div>
+                    <div class="balance-absolute">$ ${Number(drop.firstValue || 0).toFixed(2)} ${
+                      drop.secondValue && Number(drop.secondValue) > 0
+                        ? "+ Balance $ " + Number(drop.secondValue).toFixed(2)
+                        : ""
+                    }</div>
+                  </div>
+                  <div class="vertical-divider"></div>
+                  <div class="received">
+                    <div class="logo" style="background-image: url('${drop.receivedSkinsFormatted.image}');"></div>
+                    <div class="name">${drop.receivedSkinsFormatted.type} - ${drop.receivedSkinsFormatted.name}</div>
+                    <div class="price">$ ${Number(drop.receivedBalance || 0).toFixed(2)}</div>
+                  </div>
+                </div>
+                <div class="coins-mask"></div>
+              </div>
+            `;
+          }
+        }
+
+        // mostra 1 drop por vez com fila
+        function enqueue(drop) {
+          queue.push(drop);
+          if (!busy) processNext();
+        }
+
+        function processNext() {
+          if (queue.length === 0) { busy = false; return; }
+          busy = true;
+
+          var drop = queue.shift();
+          var html = renderDropHTML(drop);
+          var wrapper = document.createElement("div");
+          wrapper.innerHTML = html.trim();
+          var card = wrapper.firstChild;
+
+          dropsArea.innerHTML = ""; // garante um por vez
+          dropsArea.appendChild(card);
+
+          // forçar animação de entrada
+          requestAnimationFrame(function () { card.classList.add("show"); });
+
+          // agenda saída e próxima
+          setTimeout(function () {
+            card.classList.add("hide");
+            setTimeout(function () {
+              if (card && card.parentNode) card.parentNode.removeChild(card);
+              busy = false;
+              processNext();
+            }, 250);
+          }, DISPLAY_DURATION_MS);
+        }
+
+        // WebSocket com backoff, sem bootstrap (ao vivo)
+        var proto = location.protocol === "https:" ? "wss" : "ws";
+        var WS_URL = proto + "://" + location.host + "/ws";
+        var ws = null, reconnectTimer = null, reconnectAttempts = 0;
+
+        function nextBackoffDelay() {
+          var MAX = 30_000;
+          var base = Math.min(Math.pow(2, reconnectAttempts) * 1_000, MAX);
+          var jitter = Math.floor(Math.random() * 300);
+          return base + jitter;
+        }
+        function scheduleReconnect() {
+          if (reconnectTimer) return;
+          var delay = nextBackoffDelay();
+          reconnectTimer = setTimeout(function () {
+            reconnectTimer = null; reconnectAttempts++; connect();
+          }, delay);
+        }
+        function connect() {
+          try { ws = new WebSocket(WS_URL); } catch (e) { scheduleReconnect(); return; }
+          ws.onopen = function () { reconnectAttempts = 0; };
+          ws.onmessage = function (ev) {
+            try {
+              var msg = JSON.parse(ev.data);
+              if (msg && msg.event === "fetched_roll" && msg.payload && msg.payload.data) {
+                enqueue(msg.payload.data);
+              }
+            } catch (e) { /* ignore pongs ou payloads simples */ }
+          };
+          ws.onclose = scheduleReconnect;
+          ws.onerror = function () { try { ws && ws.close(); } catch(_){} };
+        }
+        connect();
+      })();
+    </script>
+    <script>
+            var params = new URLSearchParams(window.location.search);
+                var box = document.createElement("div");
+                box.style.width = "304px";
+                box.style.height = "186px";
+                box.style.border = "1px solid black";
+                box.style.background = "#fff";
+                box.style.position = "absolute";
+                box.style.top = "10px";
+                box.style.left = "10px";
+                box.style.zIndex = "100";
+                document.querySelector(".live-drop").appendChild(box);
+    </script>
+  </body>
+</html>
