@@ -7,15 +7,91 @@ const LOAD_MORE_MAX_CLICKS = 3;
 
 let userData = {};
 
-async function getUserData(page) {
-  return page.evaluate(() => {
-    const clean = (s) => (typeof s === 'string' ? s.replace(/\s+/g, ' ').trim() : s);
-    return {
-      userId:   clean(document.querySelector(".user__id")?.textContent.replace("ID: ", "") || ''),
-      userName: clean(document.querySelector(".user__name")?.textContent || ''),
-      userImage: clean(document.querySelector(".user__img > img")?.src || ''),
+const RARITY_HINTS = [
+  'covert','classified','restricted','mil-spec','milspec','rare','uncommon','common',
+  'legendary','epic','mythical','ancient','immortal','arcana','contraband'
+];
+
+function pickRarityFromClasses(classListLike) {
+  if (!classListLike) return '';
+  const classes = Array.from(classListLike).map(c => String(c).toLowerCase());
+  // tenta por hints conhecidas
+  const found = RARITY_HINTS.find(h => classes.some(c => c.includes(h)));
+  if (found) return found;
+  // fallback: algumas UIs usam "rarity-*" ou "quality-*"
+  const rx = /(?:rarity|quality)[-_]([a-z0-9]+)/i;
+  for (const c of classes) {
+    const m = c.match(rx);
+    if (m && m[1]) return m[1].toLowerCase();
+  }
+  return classes[classes.length - 1] || '';
+}
+
+async function getCaseRarityFromProfile(page, rollId) {
+  return page.evaluate(({ wanted, RARITY_HINTS }) => {
+    const pickRarityFromClasses = (cl) => {
+      const classes = Array.from(cl || []).map(c => String(c).toLowerCase());
+      const found = RARITY_HINTS.find(h => classes.some(c => c.includes(h)));
+      if (found) return found;
+      const rx = /(?:rarity|quality)[-_]([a-z0-9]+)/i;
+      for (const c of classes) {
+        const m = c.match(rx);
+        if (m && m[1]) return m[1].toLowerCase();
+      }
+      return classes[classes.length - 1] || '';
     };
-  });
+
+    const grid = document.querySelector('.grid_drops');
+    if (!grid) return { rarity: '', rarityClassSource: '' };
+
+    // âncora com rollID
+    const anchors = grid.querySelectorAll('a.skin__state.skin__state_provably[href*="rollID="]');
+    for (const a of anchors) {
+      const href = a.getAttribute('href') || '';
+      const m = href.match(/rollID=([^&]+)/);
+      const found = m && m[1];
+      if (found !== wanted) continue;
+
+      // sobe pro card .skin (ou contêiner principal)
+      const card = a.closest('.skin') || a.closest('.grid_drops-item') || a.parentElement;
+      if (!card) return { rarity: '', rarityClassSource: '' };
+
+      // tenta em diferentes níveis
+      const candidates = [
+        card,
+        card.querySelector('.skin__name'),
+        card.querySelector('.skin__title'),
+        card.querySelector('.skin__img'),
+        card.querySelector('[class*="rarity"], [class*="quality"]'),
+      ].filter(Boolean);
+
+      for (const el of candidates) {
+        const r = pickRarityFromClasses(el.classList);
+        if (r) return { rarity: r, rarityClassSource: el.className || '' };
+      }
+
+      return { rarity: '', rarityClassSource: card.className || '' };
+    }
+    return { rarity: '', rarityClassSource: '' };
+  }, { wanted: rollId, RARITY_HINTS });
+}
+
+async function getUserData(page) {
+  for (let attempt = 1; attempt <= 5; attempt++) {
+    const data = await page.evaluate(() => {
+      const clean = (s) => (typeof s === 'string' ? s.replace(/\s+/g, ' ').trim() : s);
+      return {
+        userId:   clean(document.querySelector(".user__id")?.textContent.replace("ID: ", "") || ''),
+        userName: clean(document.querySelector(".user__name")?.textContent || ''),
+        userImage: clean(document.querySelector(".user__img > img")?.src || ''),
+      };
+    });
+    if (data.userId && data.userName && data.userImage) {
+      return data;
+    }
+    await waitMs(page, 1000);
+  }
+  return { userId: '', userName: '', userImage: '' };
 }
 
 function waitMs(page, ms) {
@@ -357,13 +433,15 @@ async function parseProvablyCasePage(page, rollId, baseUser) {
 
 
 async function findCaseAndOpenProvably(page, rollId, maxClicks = LOAD_MORE_MAX_CLICKS) {
-  // tenta direto
+  // tenta direto no grid atual
+  const initialInfo = await getCaseRarityFromProfile(page, rollId);
   if (await hasCaseAnchor(page, rollId)) {
+    // já temos rarity do perfil — agora clica
     await clickCaseAnchor(page, rollId);
-    return true;
+    return { opened: true, rarityInfo: initialInfo };
   }
 
-  // clica Load more até maxClicks
+  // precisa carregar mais
   for (let i = 0; i < maxClicks; i++) {
     const before = await page.evaluate(() =>
       document.querySelectorAll('.grid_drops .skin').length
@@ -379,12 +457,15 @@ async function findCaseAndOpenProvably(page, rollId, maxClicks = LOAD_MORE_MAX_C
       }, { timeout: 5000, polling: 'mutation' }, before);
     } catch { /* ignore */ }
 
+    // tenta pegar rarity após carregar mais itens
+    const rarityInfo = await getCaseRarityFromProfile(page, rollId);
     if (await hasCaseAnchor(page, rollId)) {
       await clickCaseAnchor(page, rollId);
-      return true;
+      return { opened: true, rarityInfo };
     }
   }
-  return false;
+
+  return { opened: false, rarityInfo: { rarity: '', rarityClassSource: '' } };
 }
 
 /* =========================
@@ -394,7 +475,12 @@ async function findCaseAndOpenProvably(page, rollId, maxClicks = LOAD_MORE_MAX_C
  * Para type='upgrade': retorna objeto com balances, chance e itens (mantém html do bloco).
  * Para type='case': vai até a página Provably Fair e retorna case/drop + rollNumber.
  */
-export async function fetchRollBlockHTML({ userId, rollId, type = 'upgrade', timeoutMs = JOB_TIMEOUT_MS }) {
+export async function fetchRollBlockHTML({
+  userId,
+  rollId,
+  type = 'upgrade',
+  timeoutMs = JOB_TIMEOUT_MS,
+}) {
   const browser = await browserPool.getBrowser();
   let page;
 
@@ -408,27 +494,43 @@ export async function fetchRollBlockHTML({ userId, rollId, type = 'upgrade', tim
     await page.goto(url, { waitUntil: 'networkidle2', timeout: 30_000 });
     await hideMobileNav(page);
 
-    // CAPTURA OS DADOS DO USUÁRIO AQUI (página do perfil)
+    // Captura dados do usuário ainda no perfil
     userData = await getUserData(page);
 
     if (type === 'upgrade') {
       await openUpgradesWithRetry(page);
       await page.waitForSelector('.skins-block', { timeout: 10_000 });
+
       const data = await findUpgradeWithLoadMore(page, rollId, LOAD_MORE_MAX_CLICKS, userData);
       if (!data) throw new Error(`RollID ${rollId} não encontrado (upgrade)`);
       return data;
     }
 
-    // type === 'case'
+    // === type === 'case' ===
     await openCaseGridWithRetry(page);
-    // ainda estamos na página do usuário — userData já está capturado
 
-    const opened = await findCaseAndOpenProvably(page, rollId, LOAD_MORE_MAX_CLICKS);
+    // Coleta rarity no grid do perfil ANTES de ir para o Provably
+    const { opened, rarityInfo } = await findCaseAndOpenProvably(
+      page,
+      rollId,
+      LOAD_MORE_MAX_CLICKS
+    );
     if (!opened) throw new Error(`RollID ${rollId} não encontrado (case)`);
 
+    // Agora estamos na página Provably; parse detalhado
     const data = await parseProvablyCasePage(page, rollId, userData);
-    if (!data) throw new Error(`Falha ao parsear Provably Fair (case)`);
-    return data;
+    if (!data) throw new Error('Falha ao parsear Provably Fair (case)');
+
+    // Injeta rarity coletada do perfil (mantém a do Provably se existir)
+    return {
+      ...data,
+      drop: {
+        ...data.drop,
+        rarity: rarityInfo?.rarity || data.drop?.rarity || '',
+      },
+      _raritySource: rarityInfo?.rarity ? 'profile_grid' : (data.drop?.rarity ? 'provably' : ''),
+      _rarityClassSource: rarityInfo?.rarityClassSource || '',
+    };
   };
 
   try {
@@ -438,4 +540,3 @@ export async function fetchRollBlockHTML({ userId, rollId, type = 'upgrade', tim
     try { await page?.close(); } catch {}
   }
 }
-
