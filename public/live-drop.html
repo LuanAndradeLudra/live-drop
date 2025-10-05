@@ -24,7 +24,7 @@
         align-items: center;
         overflow: auto;
         scrollbar-gutter: stable;
-        background-color: #070A18;
+        background-color: #070a18;
       }
       .live-drop::-webkit-scrollbar {
         width: 8px;
@@ -265,24 +265,26 @@
   </head>
   <body>
     <div class="live-drop">
-      <div class="streammer" id="streammer-logo" style="display: none;">
-        <a href="#">
+      <div class="streammer" id="streammer-logo" style="display: none">
+        <a href="https://canaldosaullo.com.br" target="_blank">
           <img
-        src="https://canaldosaullo.com/assets/images/avatar.png"
-        alt=""
-        class="logo"
+            src="https://canaldosaullo.com/assets/images/avatar.png"
+            alt=""
+            class="logo"
           />
         </a>
       </div>
       <script>
-        (function() {
+        (function () {
           var params = new URLSearchParams(window.location.search);
-          if (!params.has('hide-logo')) {
-        document.getElementById('streammer-logo').style.display = '';
+          if (!params.has("hide-logo")) {
+            document.getElementById("streammer-logo").style.display = "";
           }
         })();
       </script>
-      <div class="drops-area ${window.location.search.includes('hide-background') ? ' hide-background' : ''}"></div>
+      <div
+        class="drops-area ${window.location.search.includes('hide-background') ? ' hide-background' : ''}"
+      ></div>
     </div>
 
     <script>
@@ -537,36 +539,130 @@
             console.error("[viewer] fetch error", e);
           });
 
-        // 2) WebSocket: inserir novos no topo e capar
-        var proto = location.protocol === "https:" ? "wss" : "ws";
-        var ws = new WebSocket(proto + "://" + location.host + "/ws");
+        // 2) WebSocket com reconexão automática
+    var proto = location.protocol === "https:" ? "wss" : "ws";
+    var WS_URL = proto + "://" + location.host + "/ws";
 
-        ws.onmessage = function (ev) {
-          try {
-            var msg = JSON.parse(ev.data);
-            if (
-              msg &&
-              msg.event === "fetched_roll" &&
-              msg.payload &&
-              msg.payload.data
-            ) {
-              renderDrop(msg.payload.data); // Renderiza o payload.data que é o objeto do drop
-            }
-          } catch (e) {
+    var ws = null;
+    var reconnectTimer = null;
+    var reconnectAttempts = 0;
+    var HEARTBEAT_MS = 25_000;   // envia ping a cada 25s
+    var STALE_MS = 60_000;       // se ficar sem tráfego por 60s, reinicia
+    var heartbeatTimer = null;
+    var lastActivityAt = Date.now();
+    var closingExplicitly = false;
+
+    function clearHeartbeat() {
+      if (heartbeatTimer) {
+        clearInterval(heartbeatTimer);
+        heartbeatTimer = null;
+      }
+    }
+
+    function startHeartbeat() {
+      clearHeartbeat();
+      heartbeatTimer = setInterval(function () {
+        var now = Date.now();
+        // Se está "stale" (sem tráfego há muito tempo), força reabrir
+        if (now - lastActivityAt > STALE_MS) {
+          console.warn("[viewer] ws stale, forcing reopen");
+          try { ws && ws.close(); } catch (_) {}
+          return;
+        }
+        // Tenta enviar um ping (servidor pode ignorar, é só para manter tráfego)
+        try { ws && ws.readyState === 1 && ws.send('ping'); } catch (_) {}
+      }, HEARTBEAT_MS);
+    }
+
+    function nextBackoffDelay() {
+      var MAX = 30_000; // 30s
+      var base = Math.min(Math.pow(2, reconnectAttempts) * 1_000, MAX);
+      var jitter = Math.floor(Math.random() * 300); // até +300ms
+      return base + jitter;
+    }
+
+    function scheduleReconnect() {
+      if (closingExplicitly) return; // não reconecta em navegação/fechamento de página
+      if (reconnectTimer) return;    // já agendado
+      var delay = nextBackoffDelay();
+      console.log("[viewer] scheduling reconnect in", delay, "ms (attempt", reconnectAttempts + 1, ")");
+      reconnectTimer = setTimeout(function () {
+        reconnectTimer = null;
+        reconnectAttempts++;
+        connect();
+      }, delay);
+    }
+
+    function connect() {
+      try {
+        ws = new WebSocket(WS_URL);
+      } catch (e) {
+        console.error("[viewer] ws ctor error", e);
+        scheduleReconnect();
+        return;
+      }
+
+      ws.onopen = function () {
+        console.log("[viewer] ws open");
+        reconnectAttempts = 0;
+        lastActivityAt = Date.now();
+        startHeartbeat();
+      };
+
+      ws.onmessage = function (ev) {
+        lastActivityAt = Date.now();
+        try {
+          var msg = JSON.parse(ev.data);
+          if (
+            msg &&
+            msg.event === "fetched_roll" &&
+            msg.payload &&
+            msg.payload.data
+          ) {
+            renderDrop(msg.payload.data); // objeto do drop
+          }
+        } catch (e) {
+          // pode ser "pong" ou outro payload simples; log apenas erros reais
+          if (ev && typeof ev.data === "string" && ev.data !== "pong") {
             console.error("[viewer] ws message error", e);
           }
-        };
+        }
+      };
 
-        ws.onopen = function () {
-          console.log("[viewer] ws open");
-        };
-        ws.onclose = function () {
-          console.log("[viewer] ws closed");
-        };
-        ws.onerror = function (e) {
-          console.log("[viewer] ws error", e);
-        };
-      })();
+      ws.onclose = function (ev) {
+        clearHeartbeat();
+        console.log("[viewer] ws closed", ev && ev.code, ev && ev.reason);
+        // Fecha e tenta reconectar (a menos que tenha sido fechamento explícito)
+        scheduleReconnect();
+      };
+
+      ws.onerror = function (e) {
+        console.log("[viewer] ws error", e);
+        // Fecha para cair no onclose e acionar o backoff
+        try { ws && ws.close(); } catch (_) {}
+      };
+    }
+
+    // Reconecta imediatamente quando voltar o link
+    window.addEventListener("online", function () {
+      if (closingExplicitly) return;
+      if (!ws || ws.readyState !== 1) {
+        if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
+        reconnectAttempts = 0;
+        connect();
+      }
+    });
+
+    // Evita reconectar ao sair da página
+    window.addEventListener("beforeunload", function () {
+      closingExplicitly = true;
+      clearHeartbeat();
+      try { ws && ws.close(); } catch (_) {}
+    });
+
+    // Boot
+    connect();
+  })();
     </script>
   </body>
 </html>
