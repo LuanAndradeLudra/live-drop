@@ -362,6 +362,7 @@
     </script>
     <script>
             var params = new URLSearchParams(window.location.search);
+            if (params.has("show-box")) {
                 var box = document.createElement("div");
                 box.style.width = "304px";
                 box.style.height = "186px";
@@ -372,6 +373,7 @@
                 box.style.left = "10px";
                 box.style.zIndex = "100";
                 document.querySelector(".live-drop").appendChild(box);
+            }
     </script>
   </body>
 </html>
