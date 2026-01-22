@@ -1,4 +1,4 @@
-import { fetchRollBlockHTML } from '../services/fetch-roll.service.js';
+import { fetchRollBlockHTML } from '../services/fetch-roll.adapter.js';
 import {
   enqueueRoll, claimNextRolls, deleteFromQueue, markFailedOrRequeue, type RollType
 } from '../repositories/rolls.repo.js';
