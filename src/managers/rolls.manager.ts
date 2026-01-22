@@ -1,11 +1,11 @@
-import { fetchRollBlockHTML } from '../services/fetch-roll.service';
+import { fetchRollBlockHTML } from '../services/fetch-roll.service.js';
 import {
   enqueueRoll, claimNextRolls, deleteFromQueue, markFailedOrRequeue, type RollType
-} from '../repositories/rolls.repo';
-import { insertFetched } from '../repositories/fetched-rolls.repo';
-import { ENV } from '../config/env';
-import type { WsHub } from '../services/ws-hub';
-import { triggerConsumption } from '../jobs/job-runner';
+} from '../repositories/rolls.repo.js';
+import { insertFetched } from '../repositories/fetched-rolls.repo.js';
+import { ENV } from '../config/env.js';
+import type { WsHub } from '../services/ws-hub.js';
+import { triggerConsumption } from '../jobs/job-runner.js';
 
 const DEFAULT_BATCH = ENV.JOBS_DEFAULT_BATCH;
 const MAX_TRIES = ENV.JOBS_MAX_TRIES;
@@ -38,7 +38,7 @@ export async function consumeBatch({ batch = DEFAULT_BATCH } = {}) {
   let done = 0;
   let requeued = 0;
 
-  await Promise.all(jobs.map(async (job) => {
+  await Promise.all(jobs.map(async (job: typeof jobs[0]) => {
     try {
       const data = await fetchRollBlockHTML({
         userId: job.user_id,

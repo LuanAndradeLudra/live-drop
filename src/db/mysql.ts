@@ -1,5 +1,5 @@
 import mysql from 'mysql2/promise';
-import { ENV } from '../config/env';
+import { ENV } from '../config/env.js';
 
 let pool: mysql.Pool | null = null;
 

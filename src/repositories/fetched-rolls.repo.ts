@@ -1,6 +1,6 @@
 import { RowDataPacket } from 'mysql2';
-import { getDb } from '../db/mysql';
-import type { RollType } from './rolls.repo';
+import { getDb } from '../db/mysql.js';
+import type { RollType } from './rolls.repo.js';
 
 export type FetchedRow = RowDataPacket &{
   id: number;

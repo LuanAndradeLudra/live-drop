@@ -1,4 +1,4 @@
-import { consumeBatch } from '../managers/rolls.manager';
+import { consumeBatch } from '../managers/rolls.manager.js';
 import * as browserPool from '../services/browser-pool.service.js';
 
 let running = false;

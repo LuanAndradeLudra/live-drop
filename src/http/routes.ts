@@ -1,9 +1,9 @@
 import { Router } from 'express';
 import { z } from 'zod';
-import { validateBody, validateQuery } from '../utils/http';
-import { enqueue, consumeBatch } from '../managers/rolls.manager';
-import { listRolls } from '../repositories/rolls.repo';
-import { listFetched } from '../repositories/fetched-rolls.repo';
+import { validateBody, validateQuery } from '../utils/http.js';
+import { enqueue, consumeBatch } from '../managers/rolls.manager.js';
+import { listRolls } from '../repositories/rolls.repo.js';
+import { listFetched } from '../repositories/fetched-rolls.repo.js';
 
 const router = Router();
 

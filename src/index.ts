@@ -1,9 +1,9 @@
-import { ENV } from './config/env';
-import { buildServer } from './http/server';
+import { ENV } from './config/env.js';
+import { buildServer } from './http/server.js';
 import http from 'node:http';
-import { createWsHub } from './services/ws-hub';
-import { setRollsWsHub } from './managers/rolls.manager';
-import { startCron } from './jobs/job-runner';
+import { createWsHub } from './services/ws-hub.js';
+import { setRollsWsHub } from './managers/rolls.manager.js';
+import { startCron } from './jobs/job-runner.js';
 
 async function main() {
   const app = buildServer();

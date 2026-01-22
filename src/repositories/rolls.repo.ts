@@ -1,5 +1,5 @@
 import { RowDataPacket } from 'mysql2';
-import { getDb } from '../db/mysql';
+import { getDb } from '../db/mysql.js';
 
 export type RollType = 'upgrade' | 'case';
 export type RollState = 'queued' | 'processing' | 'failed';
@@ -49,7 +49,7 @@ export async function claimNextRolls(opts: ClaimOptions): Promise<RollRow[]> {
       return [];
     }
 
-    const ids = rows.map(r => r.id);
+    const ids = rows.map((r: RollRow) => r.id);
     await conn.query(
       `UPDATE rolls
        SET state = 'processing', tries = tries + 1, updated_at = CURRENT_TIMESTAMP
