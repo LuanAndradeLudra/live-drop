@@ -1,88 +1,127 @@
-import { RowDataPacket } from 'mysql2';
-import { getDb } from '../db/mysql.js';
+import { getPrisma, type Prisma } from '../db/prisma.js';
 
 export type RollType = 'upgrade' | 'case';
 export type RollState = 'queued' | 'processing' | 'failed';
 
-export type RollRow = RowDataPacket & {
+export type RollRow = {
   id: number;
-  user_id: string;
+  userId: string;
   streamer: string;
   roll: string;
   type: RollType;
   state: RollState;
   tries: number;
-  created_at: string;
-  updated_at: string | null;
+  createdAt: Date;
+  updatedAt: Date | null;
 };
 
 export async function enqueueRoll(params: { userId: string; streamer: string; roll: string; type: RollType }) {
-  const db = getDb();
-  await db.execute(
-    `INSERT INTO rolls (user_id, streamer, roll, type)
-     VALUES (:userId, :streamer, :roll, :type)
-     ON DUPLICATE KEY UPDATE updated_at = CURRENT_TIMESTAMP`,
-    params
-  );
+  const prisma = getPrisma();
+  await prisma.roll.upsert({
+    where: {
+      uniq_roll_per_user_streamer: {
+        userId: params.userId,
+        roll: params.roll,
+        type: params.type,
+        streamer: params.streamer,
+      },
+    },
+    update: {
+      updatedAt: new Date(),
+    },
+    create: {
+      userId: params.userId,
+      streamer: params.streamer,
+      roll: params.roll,
+      type: params.type,
+    },
+  });
 }
 
 type ClaimOptions = { maxTries: number; batch: number };
 
 export async function claimNextRolls(opts: ClaimOptions): Promise<RollRow[]> {
-  const db = getDb();
-  const conn = await db.getConnection();
-  try {
-    await conn.beginTransaction();
+  const prisma = getPrisma();
+  
+  // PostgreSQL usa SKIP LOCKED para processamento concorrente seguro
+  // Usamos $transaction com $queryRaw para garantir atomicidade
+  return await prisma.$transaction(async (tx) => {
+    const result = await tx.$queryRaw<Array<{
+      id: number;
+      user_id: string;
+      streamer: string;
+      roll: string;
+      type: string;
+      state: string;
+      tries: number;
+      created_at: Date;
+      updated_at: Date | null;
+    }>>`
+      SELECT id, user_id, streamer, roll, type, state, tries, created_at, updated_at
+      FROM rolls
+      WHERE state = 'queued' AND tries < ${opts.maxTries}
+      ORDER BY created_at ASC, id ASC
+      LIMIT ${opts.batch}
+      FOR UPDATE SKIP LOCKED
+    `;
 
-    // Seguro e escalável com MySQL 8+: SKIP LOCKED
-    const [rows] = await conn.query<RollRow[]>(
-      `SELECT id, user_id, streamer, roll, type, state, tries, created_at, updated_at
-       FROM rolls
-       WHERE state = 'queued' AND tries < :maxTries
-       ORDER BY created_at ASC, id ASC
-       LIMIT :batch
-       FOR UPDATE SKIP LOCKED`,
-      { maxTries: opts.maxTries, batch: opts.batch }
-    );
-
-    if (rows.length === 0) {
-      await conn.commit();
+    if (result.length === 0) {
       return [];
     }
 
-    const ids = rows.map((r: RollRow) => r.id);
-    await conn.query(
-      `UPDATE rolls
-       SET state = 'processing', tries = tries + 1, updated_at = CURRENT_TIMESTAMP
-       WHERE id IN (${ids.map(() => '?').join(',')})`,
-      ids
-    );
+    const ids = result.map((r) => r.id);
+    
+    await tx.roll.updateMany({
+      where: {
+        id: { in: ids },
+      },
+      data: {
+        state: 'processing',
+        tries: { increment: 1 },
+        updatedAt: new Date(),
+      },
+    });
 
-    await conn.commit();
-    return rows;
-  } catch (e) {
-    await conn.rollback();
-    throw e;
-  } finally {
-    conn.release();
-  }
+    // Converter para formato esperado
+    return result.map((r) => ({
+      id: r.id,
+      userId: r.user_id,
+      streamer: r.streamer,
+      roll: r.roll,
+      type: r.type as RollType,
+      state: r.state as RollState,
+      tries: r.tries,
+      createdAt: r.created_at,
+      updatedAt: r.updated_at,
+    }));
+  });
 }
 
 export async function markFailedOrRequeue(id: number, maxTries: number) {
-  const db = getDb();
-  // se já atingiu o maxTries, marca failed; do contrário volta para queued
-  await db.execute(
-    `UPDATE rolls
-     SET state = IF(tries >= :maxTries, 'failed', 'queued'),
-         updated_at = CURRENT_TIMESTAMP
-     WHERE id = :id`,
-    { id, maxTries }
-  );
+  const prisma = getPrisma();
+  
+  // Busca o roll atual para verificar tries
+  const roll = await prisma.roll.findUnique({
+    where: { id },
+    select: { tries: true },
+  });
+
+  if (!roll) return;
+
+  await prisma.roll.update({
+    where: { id },
+    data: {
+      state: roll.tries >= maxTries ? 'failed' : 'queued',
+      updatedAt: new Date(),
+    },
+  });
 }
 
 export async function deleteFromQueue(id: number) {
-  const db = getDb();
-  await db.execute(`DELETE FROM rolls WHERE id = :id`, { id });
+  const prisma = getPrisma();
+  await prisma.roll.delete({
+    where: { id },
+  });
 }
 
 export type RollsListFilters = {
@@ -96,34 +135,49 @@ export type RollsListFilters = {
 };
 
 export async function listRolls(filters: RollsListFilters) {
-  const db = getDb();
+  const prisma = getPrisma();
   const limit = Math.max(1, Math.min(filters.limit ?? 100, 1000));
 
-  const where: string[] = [];
-  const params: any = {};
+  const where: Prisma.RollWhereInput = {};
 
-  if (filters.state) { where.push('state = :state'); params.state = filters.state; }
-  if (filters.userId) { where.push('user_id = :userId'); params.userId = filters.userId; }
-  if (filters.streamer) { where.push('streamer = :streamer'); params.streamer = filters.streamer; }
-  if (filters.type) { where.push('type = :type'); params.type = filters.type; }
+  if (filters.state) where.state = filters.state;
+  if (filters.userId) where.userId = filters.userId;
+  if (filters.streamer) where.streamer = filters.streamer;
+  if (filters.type) where.type = filters.type;
 
-  let cursorSql = '';
+  // Cursor pagination
   if (filters.createdBefore || filters.idLt) {
-    cursorSql = 'AND (created_at < :createdBefore OR (created_at = :createdBefore AND id < :idLt))';
-    params.createdBefore = filters.createdBefore ?? '9999-12-31 23:59:59';
-    params.idLt = filters.idLt ?? 9_223_372_036_854_775;
+    const createdBefore = filters.createdBefore ? new Date(filters.createdBefore) : new Date('9999-12-31');
+    const idLt = filters.idLt ?? Number.MAX_SAFE_INTEGER;
+    
+    where.OR = [
+      { createdAt: { lt: createdBefore } },
+      {
+        createdAt: createdBefore,
+        id: { lt: idLt },
+      },
+    ];
   }
 
-  const whereSql = where.length ? `WHERE ${where.join(' AND ')} ${cursorSql}` : (cursorSql ? `WHERE 1=1 ${cursorSql}` : '');
+  const rows = await prisma.roll.findMany({
+    where,
+    orderBy: [
+      { createdAt: 'desc' },
+      { id: 'desc' },
+    ],
+    take: limit,
+  });
 
-  const [rows] = await db.query<RollRow[]>(
-    `SELECT id, user_id, streamer, roll, type, state, tries, created_at, updated_at
-     FROM rolls
-     ${whereSql}
-     ORDER BY created_at DESC, id DESC
-     LIMIT :limit`,
-    { ...params, limit }
-  );
-
-  return rows;
+  // Converter para formato esperado
+  return rows.map((row) => ({
+    id: row.id,
+    user_id: row.userId,
+    streamer: row.streamer,
+    roll: row.roll,
+    type: row.type,
+    state: row.state,
+    tries: row.tries,
+    created_at: row.createdAt.toISOString(),
+    updated_at: row.updatedAt?.toISOString() ?? null,
+  }));
 }

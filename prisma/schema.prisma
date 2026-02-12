@@ -1,0 +1,58 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum RollType {
+  upgrade
+  case
+}
+
+enum RollState {
+  queued
+  processing
+  failed
+}
+
+model Roll {
+  id        Int       @id @default(autoincrement())
+  userId    String    @map("user_id") @db.VarChar(100)
+  streamer  String    @db.VarChar(100)
+  roll      String    @db.VarChar(100)
+  type      RollType  @default(upgrade)
+  state     RollState @default(queued)
+  tries     Int       @default(0)
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamp(6)
+  updatedAt DateTime? @updatedAt @map("updated_at") @db.Timestamp(6)
+
+  @@unique([userId, roll, type, streamer], name: "uniq_roll_per_user_streamer")
+  @@index([state, createdAt, id], name: "idx_rolls_state_created")
+  @@index([userId], name: "idx_rolls_user")
+  @@index([streamer], name: "idx_rolls_streamer")
+  @@index([streamer, state, createdAt, id], name: "idx_rolls_streamer_state_created")
+  @@map("rolls")
+}
+
+model FetchedRoll {
+  id          Int      @id @default(autoincrement())
+  userId      String   @map("user_id") @db.VarChar(100)
+  streamer    String   @db.VarChar(100)
+  roll        String   @db.VarChar(100)
+  type        RollType
+  data        Json
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamp(6)
+  processedAt DateTime @default(now()) @map("processed_at") @db.Timestamp(6)
+
+  @@unique([userId, roll, type, streamer], name: "uniq_fetched_per_user_streamer")
+  @@index([userId, createdAt], name: "idx_fetched_user_created")
+  @@index([streamer], name: "idx_fetched_streamer")
+  @@index([streamer, userId, createdAt], name: "idx_fetched_streamer_user_created")
+  @@map("fetched_rolls")
+}

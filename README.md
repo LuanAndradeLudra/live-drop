@@ -29,9 +29,8 @@ Sistema de monitoramento e processamento de rolls (sorteios) do CSGO.net com sup
 ## 🔧 Pré-requisitos
 
 - **Node.js** 18+ (recomendado 20 LTS)
-- **MySQL** 8+ (requer `SKIP LOCKED` para processamento concorrente)
+- **PostgreSQL** 12+ (requer `SKIP LOCKED` para processamento concorrente)
 - **Git** e terminal/bash
-- (Opcional) **MySQL CLI** para executar migrations manualmente
 
 ## 🚀 Instalação
 
@@ -50,10 +49,10 @@ npm install
 
 ### 3. Configure o banco de dados
 
-Crie o banco de dados MySQL:
+Crie o banco de dados PostgreSQL:
 
 ```sql
-CREATE DATABASE live_drop CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+CREATE DATABASE live_drop;
 ```
 
 ### 4. Configure as variáveis de ambiente
@@ -72,15 +71,12 @@ Edite o arquivo `.env` com suas configurações (veja [Variáveis de Ambiente](#
 npm run migrate
 ```
 
-Isso executará todas as migrations:
-- `001_init.sql` - Cria as tabelas iniciais
-- `002_add_streamer.sql` - Adiciona suporte a múltiplos streamers
+Isso criará e aplicará as migrations do Prisma automaticamente.
 
-**Alternativa manual:**
+**Para produção:**
 
 ```bash
-mysql -h 127.0.0.1 -u live_drop -p live_drop < migrations/001_init.sql
-mysql -h 127.0.0.1 -u live_drop -p live_drop < migrations/002_add_streamer.sql
+npm run migrate:deploy
 ```
 
 ### 6. Inicie o servidor
@@ -109,12 +105,8 @@ Crie um arquivo `.env` na raiz do projeto com as seguintes variáveis:
 NODE_ENV=development
 PORT=3000
 
-# MySQL
-MYSQL_HOST=localhost
-MYSQL_PORT=3306
-MYSQL_DATABASE=live_drop
-MYSQL_USER=live_drop
-MYSQL_PASSWORD=sua_senha_aqui
+# PostgreSQL (Prisma)
+DATABASE_URL=postgresql://usuario:senha@localhost:5432/live_drop?schema=public
 
 # Jobs
 JOBS_DEFAULT_BATCH=5
@@ -286,11 +278,13 @@ http://localhost:3000/live-drop-streammer?streamer=NOME_DO_STREAMER
 | Script | Descrição |
 |--------|-----------|
 | `npm run dev` | Inicia servidor em modo desenvolvimento com hot-reload |
-| `npm run build` | Compila TypeScript para JavaScript |
+| `npm run build` | Compila TypeScript e gera Prisma Client |
 | `npm start` | Inicia servidor em modo produção |
-| `npm run migrate` | Executa todas as migrations |
-| `npm run migrate:init` | Executa apenas a migration inicial |
-| `npm run migrate:streamer` | Executa apenas a migration de streamer |
+| `npm run migrate` | Cria e aplica migrations (desenvolvimento) |
+| `npm run migrate:deploy` | Aplica migrations (produção) |
+| `npm run migrate:reset` | Reseta o banco e aplica todas as migrations |
+| `npm run prisma:generate` | Gera o Prisma Client |
+| `npm run prisma:studio` | Abre Prisma Studio (interface visual do banco) |
 
 ## 📁 Estrutura do Projeto
 

@@ -1,8 +1,7 @@
-import { RowDataPacket } from 'mysql2';
-import { getDb } from '../db/mysql.js';
+import { getPrisma, type Prisma } from '../db/prisma.js';
 import type { RollType } from './rolls.repo.js';
 
-export type FetchedRow = RowDataPacket &{
+export type FetchedRow = {
   id: number;
   user_id: string;
   streamer: string;
@@ -20,13 +19,28 @@ export async function insertFetched(params: {
   type: RollType;
   data: any;
 }) {
-  const db = getDb();
-  await db.execute(
-    `INSERT INTO fetched_rolls (user_id, streamer, roll, type, data)
-     VALUES (:userId, :streamer, :roll, :type, CAST(:data AS JSON))
-     ON DUPLICATE KEY UPDATE data = VALUES(data), processed_at = CURRENT_TIMESTAMP`,
-    { ...params, data: JSON.stringify(params.data) }
-  );
+  const prisma = getPrisma();
+  await prisma.fetchedRoll.upsert({
+    where: {
+      uniq_fetched_per_user_streamer: {
+        userId: params.userId,
+        roll: params.roll,
+        type: params.type,
+        streamer: params.streamer,
+      },
+    },
+    update: {
+      data: params.data,
+      processedAt: new Date(),
+    },
+    create: {
+      userId: params.userId,
+      streamer: params.streamer,
+      roll: params.roll,
+      type: params.type,
+      data: params.data,
+    },
+  });
 }
 
 export type FetchedListFilters = {
@@ -39,32 +53,47 @@ export type FetchedListFilters = {
 };
 
 export async function listFetched(filters: FetchedListFilters) {
-  const db = getDb();
+  const prisma = getPrisma();
   const limit = Math.max(1, Math.min(filters.limit ?? 100, 1000));
 
-  const where: string[] = [];
-  const params: any = {};
+  const where: Prisma.FetchedRollWhereInput = {};
 
-  if (filters.userId) { where.push('user_id = :userId'); params.userId = filters.userId; }
-  if (filters.streamer) { where.push('streamer = :streamer'); params.streamer = filters.streamer; }
-  if (filters.type) { where.push('type = :type'); params.type = filters.type; }
+  if (filters.userId) where.userId = filters.userId;
+  if (filters.streamer) where.streamer = filters.streamer;
+  if (filters.type) where.type = filters.type;
 
-  let cursorSql = '';
+  // Cursor pagination
   if (filters.createdBefore || filters.idLt) {
-    cursorSql = 'AND (created_at < :createdBefore OR (created_at = :createdBefore AND id < :idLt))';
-    params.createdBefore = filters.createdBefore ?? '9999-12-31 23:59:59';
-    params.idLt = filters.idLt ?? 9_223_372_036_854_775;
+    const createdBefore = filters.createdBefore ? new Date(filters.createdBefore) : new Date('9999-12-31');
+    const idLt = filters.idLt ?? Number.MAX_SAFE_INTEGER;
+    
+    where.OR = [
+      { createdAt: { lt: createdBefore } },
+      {
+        createdAt: createdBefore,
+        id: { lt: idLt },
+      },
+    ];
   }
 
-  const whereSql = where.length ? `WHERE ${where.join(' AND ')} ${cursorSql}` : (cursorSql ? `WHERE 1=1 ${cursorSql}` : '');
+  const rows = await prisma.fetchedRoll.findMany({
+    where,
+    orderBy: [
+      { createdAt: 'desc' },
+      { id: 'desc' },
+    ],
+    take: limit,
+  });
 
-  const [rows] = await db.query<FetchedRow[]>(
-    `SELECT id, user_id, streamer, roll, type, data, created_at, processed_at
-     FROM fetched_rolls
-     ${whereSql}
-     ORDER BY created_at DESC, id DESC
-     LIMIT :limit`,
-    { ...params, limit }
-  );
-  return rows;
+  // Converter para formato esperado
+  return rows.map((row) => ({
+    id: row.id,
+    user_id: row.userId,
+    streamer: row.streamer,
+    roll: row.roll,
+    type: row.type,
+    data: row.data,
+    created_at: row.createdAt.toISOString(),
+    processed_at: row.processedAt.toISOString(),
+  }));
 }

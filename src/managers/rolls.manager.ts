@@ -42,14 +42,14 @@ export async function consumeBatch({ batch = DEFAULT_BATCH } = {}) {
   await Promise.all(jobs.map(async (job: typeof jobs[0]) => {
     try {
       const data = await fetchRollBlockHTML({
-        userId: job.user_id,
+        userId: job.userId,
         rollId: job.roll,
         type: job.type,
         timeoutMs: 30_000
       });
 
       await insertFetched({
-        userId: job.user_id,
+        userId: job.userId,
         streamer: job.streamer,
         roll: job.roll,
         type: job.type,
@@ -61,7 +61,7 @@ export async function consumeBatch({ batch = DEFAULT_BATCH } = {}) {
 
       try {
         wsHub?.broadcastFetchedRoll({
-          userId: job.user_id,
+          userId: job.userId,
           streamer: job.streamer,
           roll: job.roll,
           type: job.type,
