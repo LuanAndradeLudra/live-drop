@@ -169,7 +169,7 @@ export async function listRolls(filters: RollsListFilters) {
   });
 
   // Converter para formato esperado
-  return rows.map((row: { id: any; userId: any; streamer: any; roll: any; type: any; state: any; tries: any; createdAt: { toISOString: () => any; }; updatedAt: { toISOString: () => any; }; }) => ({
+  return rows.map((row) => ({
     id: row.id,
     user_id: row.userId,
     streamer: row.streamer,
