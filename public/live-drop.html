@@ -69,6 +69,7 @@
       .drops-area {
         display: flex;
         gap: 15px;
+        padding: 15px;
       }
 
       .drops-area.hide-background {
@@ -273,9 +274,10 @@
   <body>
     <div class="live-drop">
       <div class="streammer" id="streammer-logo" style="display: none">
-        <a href="https://canaldosaullo.com.br" target="_blank">
+        <a id="streamer-link" href="#" target="_blank">
           <img
-            src="https://yt3.googleusercontent.com/ytc/AIdro_lNaHfvTMuvlTWYNNUJMGM0WW90HZ6xZHV56AS-MnvnQ8oJ=s176-c-k-c0x00ffffff-no-rj-mo"
+          id="streamer-logo"
+            src="#"
             alt=""
             class="logo"
           />
@@ -288,6 +290,40 @@
             document.getElementById("streammer-logo").style.display = "";
           }
         })();
+      </script>
+      <script>
+
+    const streamers = [
+      {
+        name: 'saullo',
+        url: 'https://canaldosaullo.com.br',
+        image: 'https://yt3.googleusercontent.com/ytc/AIdro_lNaHfvTMuvlTWYNNUJMGM0WW90HZ6xZHV56AS-MnvnQ8oJ=s176-c-k-c0x00ffffff-no-rj-mo'
+      },
+      {
+        name: 'bancarios',
+        url: 'https://leodobancarios.com/',
+        image: 'https://yt3.googleusercontent.com/mwJj5e3TotDahbp1SklXSWXrmJZZvGDDWivBUgTaNtxVPxxc3CGlkk3gdjjbXhxt1uuDWvB1=s160-c-k-c0x00ffffff-no-rj'
+      
+      },
+      {
+        name: 'fasconcelos',
+        url: 'https://www.youtube.com/@fasconcelos4',
+        image: 'https://yt3.googleusercontent.com/l9TS4OpI2SWnbX2qUK2d-Gud24gQXk4dLFie6dPd3omSij498RgiE_wHxm0JPw4TvAMHrMp2fw=s160-c-k-c0x00ffffff-no-rj'
+      }
+    ]
+    function setStreamerInfo() {
+      var params = new URLSearchParams(window.location.search);
+      const streamer = params.get("streamer");
+      if (streamer) {
+        const streamerInfo = streamers.find(s => s.name === streamer);
+        if (streamerInfo) {
+          document.getElementById("streamer-link").href = streamerInfo.url;
+          document.getElementById("streamer-logo").src = streamerInfo.image;
+        }
+      }
+    }
+
+    setStreamerInfo();
       </script>
       <div
         class="drops-area ${window.location.search.includes('hide-background') ? ' hide-background' : ''}"

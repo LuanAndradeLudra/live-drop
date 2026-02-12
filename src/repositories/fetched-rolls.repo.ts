@@ -86,7 +86,7 @@ export async function listFetched(filters: FetchedListFilters) {
   });
 
   // Converter para formato esperado
-  return rows.map((row) => ({
+  return rows.map((row: { id: any; userId: any; streamer: any; roll: any; type: any; data: any; createdAt: { toISOString: () => any; }; processedAt: { toISOString: () => any; }; }) => ({
     id: row.id,
     user_id: row.userId,
     streamer: row.streamer,

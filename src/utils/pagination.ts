@@ -13,7 +13,7 @@ export function buildCursorWhere(cursor?: Cursor) {
     sql: 'AND (created_at < :createdBefore OR (created_at = :createdBefore AND id < :idLt))',
     params: {
       createdBefore: cursor.createdBefore ?? '9999-12-31 23:59:59',
-      idLt: cursor.idLt ?? 9_223_372_036_854_775 // grande o bastante
+      idLt: cursor.idLt ?? 9_223_372_036_854_775
     }
   };
 }

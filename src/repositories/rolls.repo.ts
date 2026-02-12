@@ -69,7 +69,7 @@ export async function claimNextRolls(opts: ClaimOptions): Promise<RollRow[]> {
       return [];
     }
 
-    const ids = result.map((r) => r.id);
+    const ids = result.map((r: { id: any; }) => r.id);
     
     await tx.roll.updateMany({
       where: {
@@ -83,7 +83,7 @@ export async function claimNextRolls(opts: ClaimOptions): Promise<RollRow[]> {
     });
 
     // Converter para formato esperado
-    return result.map((r) => ({
+    return result.map((r: { id: any; user_id: any; streamer: any; roll: any; type: string; state: string; tries: any; created_at: any; updated_at: any; }) => ({
       id: r.id,
       userId: r.user_id,
       streamer: r.streamer,
@@ -169,7 +169,7 @@ export async function listRolls(filters: RollsListFilters) {
   });
 
   // Converter para formato esperado
-  return rows.map((row) => ({
+  return rows.map((row: { id: any; userId: any; streamer: any; roll: any; type: any; state: any; tries: any; createdAt: { toISOString: () => any; }; updatedAt: { toISOString: () => any; }; }) => ({
     id: row.id,
     user_id: row.userId,
     streamer: row.streamer,
