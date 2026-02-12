@@ -3,10 +3,10 @@ import { WebSocketServer, WebSocket } from 'ws';
 
 export interface WsHub {
   broadcastFetchedRoll(payload: {
-    userId: string; roll: string; type: 'upgrade' | 'case'; data: any; processedAt: string;
+    userId: string; streamer: string; roll: string; type: 'upgrade' | 'case'; data: any; processedAt: string;
   }): void;
   broadcastQueuedRoll(payload: {
-    id: number; userId: string; roll: string; type: 'upgrade' | 'case'; createdAt: string;
+    id: number; userId: string; streamer: string; roll: string; type: 'upgrade' | 'case'; createdAt: string;
   }): void;
 }
 

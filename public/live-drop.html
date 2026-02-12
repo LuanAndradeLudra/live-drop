@@ -522,8 +522,16 @@
           }
         }
 
+        // Obter streamer da query string
+        var params = new URLSearchParams(window.location.search);
+        var streamer = params.get("streamer") || "";
+
         // 1) bootstrap: pegar os 20 últimos já processados
-        fetch("/api/fetched-rolls?limit=" + MAX_ITEMS)
+        var fetchUrl = "/api/fetched-rolls?limit=" + MAX_ITEMS;
+        if (streamer) {
+          fetchUrl += "&streamer=" + encodeURIComponent(streamer);
+        }
+        fetch(fetchUrl)
           .then(function (r) {
             return r.json();
           })
@@ -636,7 +644,10 @@
                 msg.payload &&
                 msg.payload.data
               ) {
-                renderDrop(msg.payload.data); // objeto do drop
+                // Filtrar por streamer se especificado
+                if (!streamer || msg.payload.streamer === streamer) {
+                  renderDrop(msg.payload.data); // objeto do drop
+                }
               }
             } catch (e) {
               // pode ser "pong" ou outro payload simples; log apenas erros reais

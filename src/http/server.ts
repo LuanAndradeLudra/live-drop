@@ -48,7 +48,7 @@ export function buildServer() {
     res.sendFile(path.join(process.cwd(), 'public', 'live-drop.html'));
   });
 
-   app.get('/live-drop-streammer', (_req, res) => {
+   app.get('/live-drop-streamer', (_req, res) => {
     res.sendFile(path.join(process.cwd(), 'public', 'live-drop-streammer.html'));
   });
 

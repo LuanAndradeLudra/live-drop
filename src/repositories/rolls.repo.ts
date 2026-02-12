@@ -7,6 +7,7 @@ export type RollState = 'queued' | 'processing' | 'failed';
 export type RollRow = RowDataPacket & {
   id: number;
   user_id: string;
+  streamer: string;
   roll: string;
   type: RollType;
   state: RollState;
@@ -15,11 +16,11 @@ export type RollRow = RowDataPacket & {
   updated_at: string | null;
 };
 
-export async function enqueueRoll(params: { userId: string; roll: string; type: RollType }) {
+export async function enqueueRoll(params: { userId: string; streamer: string; roll: string; type: RollType }) {
   const db = getDb();
   await db.execute(
-    `INSERT INTO rolls (user_id, roll, type)
-     VALUES (:userId, :roll, :type)
+    `INSERT INTO rolls (user_id, streamer, roll, type)
+     VALUES (:userId, :streamer, :roll, :type)
      ON DUPLICATE KEY UPDATE updated_at = CURRENT_TIMESTAMP`,
     params
   );
@@ -35,7 +36,7 @@ export async function claimNextRolls(opts: ClaimOptions): Promise<RollRow[]> {
 
     // Seguro e escalável com MySQL 8+: SKIP LOCKED
     const [rows] = await conn.query<RollRow[]>(
-      `SELECT id, user_id, roll, type, state, tries, created_at, updated_at
+      `SELECT id, user_id, streamer, roll, type, state, tries, created_at, updated_at
        FROM rolls
        WHERE state = 'queued' AND tries < :maxTries
        ORDER BY created_at ASC, id ASC
@@ -87,6 +88,7 @@ export async function deleteFromQueue(id: number) {
 export type RollsListFilters = {
   state?: RollState;
   userId?: string;
+  streamer?: string;
   type?: RollType;
   limit?: number; // default 100
   createdBefore?: string; // ISO
@@ -102,6 +104,7 @@ export async function listRolls(filters: RollsListFilters) {
 
   if (filters.state) { where.push('state = :state'); params.state = filters.state; }
   if (filters.userId) { where.push('user_id = :userId'); params.userId = filters.userId; }
+  if (filters.streamer) { where.push('streamer = :streamer'); params.streamer = filters.streamer; }
   if (filters.type) { where.push('type = :type'); params.type = filters.type; }
 
   let cursorSql = '';
@@ -114,7 +117,7 @@ export async function listRolls(filters: RollsListFilters) {
   const whereSql = where.length ? `WHERE ${where.join(' AND ')} ${cursorSql}` : (cursorSql ? `WHERE 1=1 ${cursorSql}` : '');
 
   const [rows] = await db.query<RollRow[]>(
-    `SELECT id, user_id, roll, type, state, tries, created_at, updated_at
+    `SELECT id, user_id, streamer, roll, type, state, tries, created_at, updated_at
      FROM rolls
      ${whereSql}
      ORDER BY created_at DESC, id DESC

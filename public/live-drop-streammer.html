@@ -499,11 +499,18 @@
         function connect() {
           try { ws = new WebSocket(WS_URL); } catch (e) { scheduleReconnect(); return; }
           ws.onopen = function () { reconnectAttempts = 0; };
+          // Obter streamer da query string
+          var params = new URLSearchParams(window.location.search);
+          var streamer = params.get("streamer") || "";
+
           ws.onmessage = function (ev) {
             try {
               var msg = JSON.parse(ev.data);
               if (msg && msg.event === "fetched_roll" && msg.payload && msg.payload.data) {
-                enqueue(msg.payload.data);
+                // Filtrar por streamer se especificado
+                if (!streamer || msg.payload.streamer === streamer) {
+                  enqueue(msg.payload.data);
+                }
               }
             } catch (e) { /* ignore pongs ou payloads simples */ }
           };

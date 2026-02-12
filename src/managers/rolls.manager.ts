@@ -14,14 +14,15 @@ let wsHub: WsHub | null = null;
 export function setRollsWsHub(h: WsHub) { wsHub = h; }
 
 // enqueue + WS + listener imediato
-export async function enqueue(params: { userId: string; rollId: string; type: RollType }) {
-  await enqueueRoll({ userId: params.userId, roll: params.rollId, type: params.type });
+export async function enqueue(params: { userId: string; streamer: string; rollId: string; type: RollType }) {
+  await enqueueRoll({ userId: params.userId, streamer: params.streamer, roll: params.rollId, type: params.type });
 
   // opcional: WS de "queued"
   try {
     wsHub?.broadcastQueuedRoll({
       id: 0,
       userId: params.userId,
+      streamer: params.streamer,
       roll: params.rollId,
       type: params.type,
       createdAt: new Date().toISOString()
@@ -49,6 +50,7 @@ export async function consumeBatch({ batch = DEFAULT_BATCH } = {}) {
 
       await insertFetched({
         userId: job.user_id,
+        streamer: job.streamer,
         roll: job.roll,
         type: job.type,
         data
@@ -60,6 +62,7 @@ export async function consumeBatch({ batch = DEFAULT_BATCH } = {}) {
       try {
         wsHub?.broadcastFetchedRoll({
           userId: job.user_id,
+          streamer: job.streamer,
           roll: job.roll,
           type: job.type,
           data,

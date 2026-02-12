@@ -5,6 +5,7 @@ import type { RollType } from './rolls.repo.js';
 export type FetchedRow = RowDataPacket &{
   id: number;
   user_id: string;
+  streamer: string;
   roll: string;
   type: RollType;
   data: any;
@@ -14,14 +15,15 @@ export type FetchedRow = RowDataPacket &{
 
 export async function insertFetched(params: {
   userId: string;
+  streamer: string;
   roll: string;
   type: RollType;
   data: any;
 }) {
   const db = getDb();
   await db.execute(
-    `INSERT INTO fetched_rolls (user_id, roll, type, data)
-     VALUES (:userId, :roll, :type, CAST(:data AS JSON))
+    `INSERT INTO fetched_rolls (user_id, streamer, roll, type, data)
+     VALUES (:userId, :streamer, :roll, :type, CAST(:data AS JSON))
      ON DUPLICATE KEY UPDATE data = VALUES(data), processed_at = CURRENT_TIMESTAMP`,
     { ...params, data: JSON.stringify(params.data) }
   );
@@ -29,6 +31,7 @@ export async function insertFetched(params: {
 
 export type FetchedListFilters = {
   userId?: string;
+  streamer?: string;
   type?: RollType;
   limit?: number; // default 100
   createdBefore?: string; // ISO
@@ -43,6 +46,7 @@ export async function listFetched(filters: FetchedListFilters) {
   const params: any = {};
 
   if (filters.userId) { where.push('user_id = :userId'); params.userId = filters.userId; }
+  if (filters.streamer) { where.push('streamer = :streamer'); params.streamer = filters.streamer; }
   if (filters.type) { where.push('type = :type'); params.type = filters.type; }
 
   let cursorSql = '';
@@ -55,7 +59,7 @@ export async function listFetched(filters: FetchedListFilters) {
   const whereSql = where.length ? `WHERE ${where.join(' AND ')} ${cursorSql}` : (cursorSql ? `WHERE 1=1 ${cursorSql}` : '');
 
   const [rows] = await db.query<FetchedRow[]>(
-    `SELECT id, user_id, roll, type, data, created_at, processed_at
+    `SELECT id, user_id, streamer, roll, type, data, created_at, processed_at
      FROM fetched_rolls
      ${whereSql}
      ORDER BY created_at DESC, id DESC
