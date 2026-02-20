@@ -13,6 +13,8 @@ export type UpgradeResult = {
   balance: string;
   chance: string;
   receivedBalance: string;
+  firstValue: string;
+  secondValue: string;
   usedSkinsFormatted: Array<{ name: string; type: string; image: string; rarity: string }>;
   receivedSkinsFormatted: { name: string; type: string; image: string; rarity: string } | null;
   html: string;
