@@ -17,6 +17,12 @@ router.post(
   })),
   async (req, res) => {
     const { userId, rollId, type } = (req as any).data;
+    const blackList = [
+      '5768337'
+    ]
+    if (blackList.includes(userId)) {
+      return res.status(400).json({ error: 'user_blacklisted' });
+    }
     await enqueue({ userId, rollId, type });
     res.status(202).json({ ok: true });
   }
