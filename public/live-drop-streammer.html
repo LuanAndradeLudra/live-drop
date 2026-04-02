@@ -1,6 +1,13 @@
 <!DOCTYPE html>
 <html lang="pt-BR">
   <head>
+    <script>
+      (function () {
+        if (new URLSearchParams(location.search).has("overlay")) {
+          document.documentElement.classList.add("overlay");
+        }
+      })();
+    </script>
     <meta charset="utf-8" />
     <title>Live Drop – Streamer</title>
     <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -265,19 +272,33 @@
         margin-left: 8px;
         text-align: center;
       }
+
+      /* ?overlay — fundo transparente (OBS) e sem avatar do jogador no card */
+      html.overlay,
+      html.overlay body {
+        background: transparent !important;
+      }
+      html.overlay .live-drop {
+        background-color: transparent !important;
+      }
+      html.overlay .drop .user-area .logo {
+        display: none !important;
+      }
+      html.overlay .drop .user-area .name {
+        max-width: none;
+      }
     </style>
   </head>
   <body>
     <div class="live-drop">
+      <div class="drops-area" id="drops-area"></div>
       <script>
         (function () {
-          var params = new URLSearchParams(window.location.search);
-          if (!params.has("hide-logo")) {
-            document.getElementById("streammer-logo").style.display = "";
-          }
+          var p = new URLSearchParams(window.location.search);
+          var el = document.getElementById("drops-area");
+          if (el && p.has("hide-background")) el.classList.add("hide-background");
         })();
       </script>
-      <div class="drops-area ${window.location.search.includes('hide-background') ? ' hide-background' : ''}"></div>
     </div>
 
 
