@@ -277,7 +277,7 @@
         text-align: center;
       }
 
-      /* ?overlay — fundo transparente (OBS) e sem avatar do jogador no card */
+      /* ?overlay — fundo transparente (OBS) e logo do canal oculta (#streammer-logo) */
       html.overlay,
       html.overlay body {
         background: transparent !important;
@@ -285,11 +285,8 @@
       html.overlay .live-drop {
         background-color: transparent !important;
       }
-      html.overlay .drop .user-area .logo {
+      html.overlay #streammer-logo {
         display: none !important;
-      }
-      html.overlay .drop .user-area .name {
-        max-width: none;
       }
     </style>
   </head>
@@ -308,7 +305,7 @@
       <script>
         (function () {
           var params = new URLSearchParams(window.location.search);
-          if (!params.has("hide-logo") && !params.has("overlay")) {
+          if (!params.has("hide-logo")) {
             document.getElementById("streammer-logo").style.display = "";
           }
         })();
