@@ -10,18 +10,18 @@ import { triggerConsumption } from '../jobs/job-runner.js';
 const DEFAULT_BATCH = ENV.JOBS_DEFAULT_BATCH;
 const MAX_TRIES = ENV.JOBS_MAX_TRIES;
 
-/** Só persiste case no banco/WS se for profit: caixa > $5 e item > preço da caixa. */
-const MIN_CASE_PRICE_FOR_PROFIT = 5;
+/** Só persiste case no banco/WS se: drop > $5 e drop mais caro que a caixa. */
+const MIN_DROP_PRICE_FOR_PROFIT = 5;
 
 function isProfitableCaseRoll(data: unknown): boolean {
   if (data === null || typeof data !== 'object') return false;
   const d = data as Record<string, unknown>;
   const c = d.case as Record<string, unknown> | undefined;
-  const drop = d.drop as Record<string, unknown> | undefined;
+  const dropObj = d.drop as Record<string, unknown> | undefined;
   const casePrice = Number(c?.price);
-  const dropPrice = Number(drop?.price);
+  const dropPrice = Number(dropObj?.price);
   if (!Number.isFinite(casePrice) || !Number.isFinite(dropPrice)) return false;
-  return casePrice > MIN_CASE_PRICE_FOR_PROFIT && dropPrice > casePrice;
+  return dropPrice > MIN_DROP_PRICE_FOR_PROFIT && dropPrice > casePrice;
 }
 
 let wsHub: WsHub | null = null;
