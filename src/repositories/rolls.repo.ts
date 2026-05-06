@@ -124,6 +124,29 @@ export async function deleteFromQueue(id: number) {
   });
 }
 
+export async function countRollsByState(state: RollState): Promise<number> {
+  const prisma = getPrisma();
+  return prisma.roll.count({ where: { state } });
+}
+
+/** Devolve processing travados (sem heartbeat em updated_at) para queued. */
+export async function releaseStaleProcessing(olderThanMinutes: number): Promise<number> {
+  if (olderThanMinutes <= 0) return 0;
+  const prisma = getPrisma();
+  const cutoff = new Date(Date.now() - olderThanMinutes * 60_000);
+  const result = await prisma.roll.updateMany({
+    where: {
+      state: 'processing',
+      updatedAt: { lt: cutoff },
+    },
+    data: {
+      state: 'queued',
+      updatedAt: new Date(),
+    },
+  });
+  return result.count;
+}
+
 export type RollsListFilters = {
   state?: RollState;
   userId?: string;

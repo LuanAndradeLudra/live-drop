@@ -10,7 +10,7 @@ const ENV = {
   BLOCK_DETECTION: process.env.PPTR_BLOCK_DETECTION === 'true',
 };
 
-const MAX_PAGES = Number(process.env.PPTR_MAX_PAGES || 5);
+const MAX_PAGES = Number(process.env.PPTR_MAX_PAGES ?? 12);
 const LAUNCH_MAX_RETRIES = 3;
 const NEWPAGE_TIMEOUT_MS = 10_000;
 const NEWPAGE_RETRIES = 2;

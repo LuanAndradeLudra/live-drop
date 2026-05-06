@@ -2,7 +2,8 @@ import { Router } from 'express';
 import { z } from 'zod';
 import { validateBody, validateQuery } from '../utils/http.js';
 import { enqueue, consumeBatch } from '../managers/rolls.manager.js';
-import { listRolls } from '../repositories/rolls.repo.js';
+import { listRolls, countRollsByState } from '../repositories/rolls.repo.js';
+import { ENV } from '../config/env.js';
 import { listFetched } from '../repositories/fetched-rolls.repo.js';
 
 const router = Router();
@@ -17,6 +18,17 @@ router.post(
     type: z.enum(['upgrade', 'case']).default('upgrade')
   })),
   async (req, res) => {
+    if (ENV.MAX_QUEUED_ROLLS > 0) {
+      const queued = await countRollsByState('queued');
+      if (queued >= ENV.MAX_QUEUED_ROLLS) {
+        return res.status(429).json({
+          error: 'queue_full',
+          message: 'Fila de rolls cheia; tente mais tarde.',
+          queued,
+          max: ENV.MAX_QUEUED_ROLLS,
+        });
+      }
+    }
     const { userId, streamer, rollId, type } = (req as any).data;
     await enqueue({ userId, streamer, rollId, type });
     res.status(202).json({ ok: true });
