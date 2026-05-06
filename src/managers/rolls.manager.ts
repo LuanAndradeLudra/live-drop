@@ -1,6 +1,10 @@
 import { fetchRollBlockHTML } from '../services/fetch-roll.adapter.js';
 import {
-  enqueueRoll, claimNextRolls, deleteFromQueue, markFailedOrRequeue, type RollType
+  enqueueRoll,
+  claimNextRolls,
+  deleteFromQueue,
+  markFailedOrRequeue,
+  type RollType,
 } from '../repositories/rolls.repo.js';
 import { insertFetched } from '../repositories/fetched-rolls.repo.js';
 import { ENV } from '../config/env.js';
@@ -10,9 +14,21 @@ import { triggerConsumption } from '../jobs/job-runner.js';
 const DEFAULT_BATCH = ENV.JOBS_DEFAULT_BATCH;
 const MAX_TRIES = ENV.JOBS_MAX_TRIES;
 
-/** Só persiste case no banco/WS se: drop > $5 e drop mais caro que a caixa. */
-const MIN_DROP_PRICE_FOR_PROFIT = 5;
+/** Mesmo limiar numérico do site (case: drop; upgrade: valor recebido). */
+const MIN_PRICE_CASE_DROP = 5;
+const MIN_PRICE_UPGRADE_RECEIVED = 5;
 
+/** Extrai número de strings tipo "$ 12,34" / "12.34 USD". */
+function parseMoneyLike(value: unknown): number | null {
+  if (value === null || value === undefined) return null;
+  const s = String(value).trim().replace(/\s/g, ' ');
+  const m = s.match(/-?\d+(?:[.,]\d+)?/);
+  if (!m) return null;
+  const n = Number(m[0].replace(',', '.'));
+  return Number.isFinite(n) ? n : null;
+}
+
+/** Case: drop > 5 e drop mais caro que a caixa. */
 function isProfitableCaseRoll(data: unknown): boolean {
   if (data === null || typeof data !== 'object') return false;
   const d = data as Record<string, unknown>;
@@ -21,7 +37,22 @@ function isProfitableCaseRoll(data: unknown): boolean {
   const casePrice = Number(c?.price);
   const dropPrice = Number(dropObj?.price);
   if (!Number.isFinite(casePrice) || !Number.isFinite(dropPrice)) return false;
-  return dropPrice > MIN_DROP_PRICE_FOR_PROFIT && dropPrice > casePrice;
+  return dropPrice > MIN_PRICE_CASE_DROP && dropPrice > casePrice;
+}
+
+/** Upgrade: valor do item ganho (receivedBalance) > 5. */
+function isWorthwhileUpgradeRoll(data: unknown): boolean {
+  if (data === null || typeof data !== 'object') return false;
+  const d = data as Record<string, unknown>;
+  const received = parseMoneyLike(d.receivedBalance);
+  if (received === null) return false;
+  return received > MIN_PRICE_UPGRADE_RECEIVED;
+}
+
+function shouldPersistFetched(jobType: RollType, data: unknown): boolean {
+  if (jobType === 'case') return isProfitableCaseRoll(data);
+  if (jobType === 'upgrade') return isWorthwhileUpgradeRoll(data);
+  return false;
 }
 
 let wsHub: WsHub | null = null;
@@ -62,10 +93,9 @@ export async function consumeBatch({ batch = DEFAULT_BATCH } = {}) {
         timeoutMs: 30_000
       });
 
-      const persistCase =
-        job.type !== 'case' || isProfitableCaseRoll(data);
+      const persist = shouldPersistFetched(job.type, data);
 
-      if (persistCase) {
+      if (persist) {
         await insertFetched({
           userId: job.userId,
           streamer: job.streamer,
@@ -84,14 +114,21 @@ export async function consumeBatch({ batch = DEFAULT_BATCH } = {}) {
             processedAt: new Date().toISOString()
           });
         } catch {}
-      } else {
+      } else if (job.type === 'case') {
         console.info(
-          '[rolls] case roll ignorado (sem profit):',
+          '[rolls] case ignorado (regra: drop > 5 e drop > caixa):',
           job.roll,
           'casePrice=',
           (data as { case?: { price?: number } })?.case?.price,
           'dropPrice=',
           (data as { drop?: { price?: number } })?.drop?.price
+        );
+      } else {
+        console.info(
+          '[rolls] upgrade ignorado (regra: item > 5):',
+          job.roll,
+          'receivedBalance=',
+          (data as { receivedBalance?: string })?.receivedBalance
         );
       }
 
