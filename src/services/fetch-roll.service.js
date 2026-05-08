@@ -663,11 +663,7 @@ export async function fetchRollBlockHTML({
   type = 'upgrade',
   timeoutMs = JOB_TIMEOUT_MS,
 }) {
-  const browser = await browserPool.getBrowser();
-  let page;
-
-  const job = async () => {
-    page = await browser.newPage();
+  return browserPool.withPage(async (page) => {
     page.on('console', (msg) => console.log('[page]', msg.text()));
     page.setDefaultTimeout(12_000);
     page.setDefaultNavigationTimeout(20_000);
@@ -685,11 +681,9 @@ export async function fetchRollBlockHTML({
 
       userData = await maybeRefetchUserData(page, userData);
 
-      // 1) parse do bloco de upgrade no perfil
       const data = await findUpgradeWithLoadMore(page, rollId, LOAD_MORE_MAX_CLICKS, userData);
       if (!data) throw new Error(`RollID ${rollId} não encontrado (upgrade)`);
 
-      // 2) entra no Provably desse roll para obter rollNumber/URL
       await openUpgradeProvably(page, rollId);
       const { rollNumber, provablyUrl } = await getRollNumberFromProvably(page);
 
@@ -706,15 +700,12 @@ export async function fetchRollBlockHTML({
 
     userData = await maybeRefetchUserData(page, userData);
 
-    // Coleta rarity no perfil e navega para o Provably
     const { opened, rarityInfo } = await findCaseAndOpenProvably(page, rollId, LOAD_MORE_MAX_CLICKS);
     if (!opened) throw new Error(`RollID ${rollId} não encontrado (case)`);
 
-    // Parse detalhado do Provably
     const data = await parseProvablyCasePage(page, rollId, userData);
     if (!data) throw new Error('Falha ao parsear Provably Fair (case)');
 
-    // Injeta rarity coletada do perfil (mantém a do Provably se houver)
     return {
       ...data,
       drop: {
@@ -725,12 +716,5 @@ export async function fetchRollBlockHTML({
       _rarityClassSource: rarityInfo?.rarityClassSource || '',
       _userDataStatus: userData?._status || 'unknown',
     };
-  };
-
-  try {
-    const runner = withTimeout(job, timeoutMs);
-    return await runner.run();
-  } finally {
-    try { await page?.close(); } catch {}
-  }
+  }, { name: `roll-${rollId}`, createTimeoutMs: timeoutMs });
 }
