@@ -8,6 +8,9 @@ import { listFetched } from '../repositories/fetched-rolls.repo.js';
 
 const router = Router();
 
+/** userIds que não entram na fila (sem DB, sem browser). */
+const IGNORED_ROLL_USER_IDS = new Set(['1101827', '918310', '6709790']);
+
 /** POST /api/rolls — Enfileira um roll */
 router.post(
   '/rolls',
@@ -18,6 +21,10 @@ router.post(
     type: z.enum(['upgrade', 'case']).default('upgrade')
   })),
   async (req, res) => {
+    const { userId, streamer, rollId, type } = (req as any).data;
+    if (IGNORED_ROLL_USER_IDS.has(userId)) {
+      return res.status(202).json({ ok: true });
+    }
     if (ENV.MAX_QUEUED_ROLLS > 0) {
       const queued = await countRollsByState('queued');
       if (queued >= ENV.MAX_QUEUED_ROLLS) {
@@ -29,7 +36,6 @@ router.post(
         });
       }
     }
-    const { userId, streamer, rollId, type } = (req as any).data;
     await enqueue({ userId, streamer, rollId, type });
     res.status(202).json({ ok: true });
   }
