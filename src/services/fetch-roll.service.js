@@ -14,8 +14,6 @@ const RARITY_HINTS = [
   'ancient', 'immortal', 'arcana', 'contraband'
 ];
 
-let userData = {};
-
 /** =========================
  *  UTILS
  * ======================= */
@@ -672,8 +670,8 @@ export async function fetchRollBlockHTML({
     await page.goto(url, { waitUntil: 'networkidle2', timeout: 30_000 });
     await hideMobileNav(page);
 
-    // Captura robusta no perfil
-    userData = await getUserDataRobust(page);
+    // Captura robusta no perfil (variável local — evita race condition entre jobs paralelos)
+    let userData = await getUserDataRobust(page);
 
     if (type === 'upgrade') {
       await openUpgradesWithRetry(page);

@@ -619,14 +619,14 @@
             // A API já retorna ordenado por created_at DESC
             // Renderiza na ordem inversa para que os mais recentes fiquem no topo
             (j.items || []).reverse().forEach(function (row) {
-              // A API original retornava `row.data` com o payload, mas o mock tem `payload.data` ou `data`
-              // Vamos tentar parsear ou usar o objeto diretamente, dependendo da estrutura
               let dropData;
               try {
                 dropData = JSON.parse(row.data);
               } catch (e) {
-                dropData = row.data; // Se não for JSON string, usa o objeto direto
+                dropData = row.data;
               }
+              // user_id da coluna do banco é a fonte autoritativa
+              if (row.user_id) dropData = Object.assign({}, dropData, { userId: row.user_id });
               renderDrop(dropData);
             });
           })
@@ -726,7 +726,11 @@
               ) {
                 // Filtrar por streamer se especificado
                 if (!streamer || msg.payload.streamer === streamer) {
-                  renderDrop(msg.payload.data); // objeto do drop
+                  // payload.userId é a fonte autoritativa; sobrescreve o userId dentro do JSON do drop
+                  var dropData = msg.payload.userId
+                    ? Object.assign({}, msg.payload.data, { userId: msg.payload.userId })
+                    : msg.payload.data;
+                  renderDrop(dropData);
                 }
               }
             } catch (e) {

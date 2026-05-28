@@ -95,13 +95,17 @@ export async function consumeBatch({ batch = DEFAULT_BATCH } = {}) {
 
       const persist = shouldPersistFetched(job.type, data);
 
+      // Garante que os campos de usuário no JSON batem com o job que originou o drop,
+      // evitando que dados de scrape com race condition apareçam com o usuário errado.
+      const sanitizedData = { ...data as object, userId: job.userId };
+
       if (persist) {
         await insertFetched({
           userId: job.userId,
           streamer: job.streamer,
           roll: job.roll,
           type: job.type,
-          data
+          data: sanitizedData
         });
 
         try {
@@ -110,7 +114,7 @@ export async function consumeBatch({ batch = DEFAULT_BATCH } = {}) {
             streamer: job.streamer,
             roll: job.roll,
             type: job.type,
-            data,
+            data: sanitizedData,
             processedAt: new Date().toISOString()
           });
         } catch {}
