@@ -9,7 +9,7 @@ import { listFetched } from '../repositories/fetched-rolls.repo.js';
 const router = Router();
 
 /** userIds que não entram na fila (sem DB, sem browser). */
-const IGNORED_ROLL_USER_IDS = new Set(['1101827', '918310', '6709790', '1184512']);
+const IGNORED_ROLL_USER_IDS = new Set(['1101827', '918310', '6709790', '1184512', '4739714']);
 
 /** POST /api/rolls — Enfileira um roll */
 router.post(
