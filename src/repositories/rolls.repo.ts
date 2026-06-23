@@ -43,8 +43,9 @@ type ClaimOptions = { maxTries: number; batch: number };
 export async function claimNextRolls(opts: ClaimOptions): Promise<RollRow[]> {
   const prisma = getPrisma();
   
-  // PostgreSQL usa SKIP LOCKED para processamento concorrente seguro
-  // Usamos $transaction com $queryRaw para garantir atomicidade
+  // Fair round-robin: pega 1 roll por streamer distinto (o mais antigo de cada),
+  // depois limita ao batch e aplica SKIP LOCKED para segurança concorrente.
+  // Isso impede que falhas de um streamer atrasem os demais.
   return await prisma.$transaction(async (tx) => {
     const result = await tx.$queryRaw<Array<{
       id: number;
@@ -57,10 +58,15 @@ export async function claimNextRolls(opts: ClaimOptions): Promise<RollRow[]> {
       created_at: Date;
       updated_at: Date | null;
     }>>`
-      SELECT id, user_id, streamer, roll, type, state, tries, created_at, updated_at
-      FROM rolls
-      WHERE state = 'queued' AND tries < ${opts.maxTries}
-      ORDER BY created_at ASC, id ASC
+      SELECT r.id, r.user_id, r.streamer, r.roll, r.type, r.state, r.tries, r.created_at, r.updated_at
+      FROM rolls r
+      WHERE r.id IN (
+        SELECT DISTINCT ON (streamer) id
+        FROM rolls
+        WHERE state = 'queued' AND tries < ${opts.maxTries}
+        ORDER BY streamer, created_at ASC, id ASC
+      )
+      ORDER BY r.created_at ASC, r.id ASC
       LIMIT ${opts.batch}
       FOR UPDATE SKIP LOCKED
     `;
@@ -122,6 +128,13 @@ export async function deleteFromQueue(id: number) {
   await prisma.roll.delete({
     where: { id },
   });
+}
+
+/** Remove todos os rolls com state = 'failed'. Retorna o número deletado. */
+export async function deleteAllFailedRolls(): Promise<number> {
+  const prisma = getPrisma();
+  const result = await prisma.roll.deleteMany({ where: { state: 'failed' } });
+  return result.count;
 }
 
 export async function countRollsByState(state: RollState): Promise<number> {

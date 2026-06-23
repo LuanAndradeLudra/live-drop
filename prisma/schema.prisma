@@ -54,5 +54,6 @@ model FetchedRoll {
   @@index([userId, createdAt], name: "idx_fetched_user_created")
   @@index([streamer], name: "idx_fetched_streamer")
   @@index([streamer, userId, createdAt], name: "idx_fetched_streamer_user_created")
+  @@index([streamer, createdAt(sort: Desc), id(sort: Desc)], name: "idx_fetched_streamer_created_desc")
   @@map("fetched_rolls")
 }

@@ -1,6 +1,7 @@
 import { consumeBatch } from '../managers/rolls.manager.js';
 import * as browserPool from '../services/browser-pool.service.js';
-import { releaseStaleProcessing } from '../repositories/rolls.repo.js';
+import { releaseStaleProcessing, deleteAllFailedRolls } from '../repositories/rolls.repo.js';
+import { pruneOldDropsPerStreamer } from '../repositories/fetched-rolls.repo.js';
 import { ENV } from '../config/env.js';
 
 let running = false;
@@ -49,6 +50,43 @@ export async function triggerConsumption() {
   }
 }
 
+/** Retorna ms até o próximo HH:00 no horário local. */
+function msUntilNextHour(hour: number): number {
+  const now = new Date();
+  const next = new Date(now);
+  next.setHours(hour, 0, 0, 0);
+  if (next <= now) next.setDate(next.getDate() + 1);
+  return next.getTime() - now.getTime();
+}
+
+function scheduleDailyCleanup() {
+  const ms = msUntilNextHour(ENV.DAILY_CLEANUP_HOUR);
+  const hh = String(ENV.DAILY_CLEANUP_HOUR).padStart(2, '0');
+  console.info(
+    `[job-runner] limpeza diária agendada para ${hh}:00 ` +
+    `(em ${Math.round(ms / 60_000)} min) — mantendo últimos ${ENV.FETCHED_ROLLS_KEEP_PER_STREAMER} drops/streamer`
+  );
+  setTimeout(() => {
+    runDailyCleanup().catch(() => {});
+    setInterval(() => { runDailyCleanup().catch(() => {}); }, 24 * 60 * 60 * 1000);
+  }, ms);
+}
+
+async function runDailyCleanup() {
+  try {
+    const [deletedDrops, deletedFailed] = await Promise.all([
+      pruneOldDropsPerStreamer(ENV.FETCHED_ROLLS_KEEP_PER_STREAMER),
+      deleteAllFailedRolls(),
+    ]);
+    console.info(
+      `[job-runner] limpeza diária: ${deletedDrops} drops antigos removidos ` +
+      `(últimos ${ENV.FETCHED_ROLLS_KEEP_PER_STREAMER}/streamer), ${deletedFailed} rolls failed removidos`
+    );
+  } catch (e) {
+    console.error('[job-runner] runDailyCleanup:', e);
+  }
+}
+
 export function startCron() {
   setInterval(() => { triggerConsumption().catch(() => {}); }, 30_000);
 
@@ -60,4 +98,6 @@ export function startCron() {
   setTimeout(() => {
     runStaleProcessingSweep().catch(() => {});
   }, 5_000);
+
+  scheduleDailyCleanup();
 }

@@ -9,7 +9,13 @@ const schema = z.object({
   DATABASE_URL: z.string(),
 
   JOBS_DEFAULT_BATCH: z.coerce.number().default(1),
-  JOBS_MAX_TRIES: z.coerce.number().default(3),
+  JOBS_MAX_TRIES: z.coerce.number().default(2),
+
+  /** Quantos drops por streamer manter em fetched_rolls (limpeza diária). */
+  FETCHED_ROLLS_KEEP_PER_STREAMER: z.coerce.number().int().min(1).default(30),
+
+  /** Hora (0-23, horário local) em que roda a limpeza diária de drops antigos. */
+  DAILY_CLEANUP_HOUR: z.coerce.number().int().min(0).max(23).default(5),
 
   /** > 0: POST /api/rolls retorna 429 quando fila queued ≥ valor (evita backlog infinito). 0 = sem limite. */
   MAX_QUEUED_ROLLS: z.coerce.number().int().min(0).default(0),

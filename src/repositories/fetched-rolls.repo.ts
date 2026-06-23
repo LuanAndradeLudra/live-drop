@@ -43,6 +43,29 @@ export async function insertFetched(params: {
   });
 }
 
+/**
+ * Remove os drops mais antigos mantendo apenas os últimos `keepLast` por streamer.
+ * Retorna o número de registros deletados.
+ */
+export async function pruneOldDropsPerStreamer(keepLast: number): Promise<number> {
+  const prisma = getPrisma();
+  const result = await prisma.$executeRaw`
+    DELETE FROM fetched_rolls
+    WHERE id IN (
+      SELECT id FROM (
+        SELECT id,
+               ROW_NUMBER() OVER (
+                 PARTITION BY streamer
+                 ORDER BY created_at DESC, id DESC
+               ) AS rn
+        FROM fetched_rolls
+      ) ranked
+      WHERE rn > ${keepLast}
+    )
+  `;
+  return result;
+}
+
 export type FetchedListFilters = {
   userId?: string;
   streamer?: string;
