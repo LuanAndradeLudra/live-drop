@@ -3,8 +3,12 @@
   <head>
     <script>
       (function () {
-        if (new URLSearchParams(location.search).has("overlay")) {
+        var params = new URLSearchParams(location.search);
+        if (params.has("overlay")) {
           document.documentElement.classList.add("overlay");
+        }
+        if (params.get("streamer") === "greenlegend") {
+          document.documentElement.classList.add("live-drop-disabled");
         }
       })();
     </script>
@@ -288,6 +292,10 @@
       html.overlay #streammer-logo {
         display: none !important;
       }
+
+      html.live-drop-disabled .live-drop {
+        display: none !important;
+      }
     </style>
   </head>
   <body>
@@ -388,6 +396,10 @@
       (function () {
         var dropsArea = document.querySelector(".drops-area");
         var MAX_ITEMS = 20;
+
+        if (document.documentElement.classList.contains("live-drop-disabled")) {
+          return;
+        }
 
         function renderDrop(drop) {
           let dropHTML = "";
