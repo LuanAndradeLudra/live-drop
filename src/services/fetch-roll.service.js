@@ -27,6 +27,56 @@ function waitMs(page, ms) {
   return new Promise((res) => setTimeout(res, ms));
 }
 
+function logStep(rollId, step, extra) {
+  const detail = extra === undefined
+    ? ''
+    : ' ' + (typeof extra === 'string' ? extra : JSON.stringify(extra));
+  console.log(`[roll:${rollId}] ${step}${detail}`);
+}
+
+async function logPageSnapshot(page, rollId, reason) {
+  try {
+    const info = await page.evaluate(() => {
+      const text = (document.body?.innerText || '').replace(/\s+/g, ' ').trim().slice(0, 500);
+      const selectors = [
+        '.provably-fair-roll__number-value',
+        '.provably-fair-roll',
+        '.layout-provably-fair',
+        '.layout-provably-fair__title',
+        '.provably-fair-roll__game',
+        '.provably-fair-roll__result',
+        '.provably-fair-progress__marker',
+        '.layout-provably-fair__type',
+        '.grid_drops',
+        '.skins-block',
+      ];
+      const counts = Object.fromEntries(selectors.map((sel) => [sel, document.querySelectorAll(sel).length]));
+      return { title: document.title || '', ready: document.readyState, counts, text };
+    });
+    console.log(`[roll:${rollId}] snapshot (${reason}) url=${page.url()} title=${JSON.stringify(info.title)} ready=${info.ready} counts=${JSON.stringify(info.counts)}`);
+    console.log(`[roll:${rollId}] snapshot text: ${info.text}`);
+  } catch (err) {
+    console.log(`[roll:${rollId}] snapshot failed (${reason}) url=${page.url()} err=${err?.message || err}`);
+  }
+}
+
+const PROVABLY_READY = [
+  '.provably-fair-roll__number-value',
+  '.layout-provably-fair__title',
+  '.provably-fair-progress__marker',
+].join(', ');
+
+async function waitForProvablyReady(page, rollId) {
+  logStep(rollId, 'wait-provably', { url: page.url(), selector: PROVABLY_READY });
+  try {
+    await page.waitForSelector(PROVABLY_READY, { timeout: 10000 });
+    logStep(rollId, 'wait-provably.ok', { url: page.url() });
+  } catch (err) {
+    await logPageSnapshot(page, rollId, 'wait-provably timeout');
+    throw err;
+  }
+}
+
 function withTimeout(promiseFactory, ms) {
   let timer;
   const ko = new Promise((_, rej) => {
@@ -358,9 +408,13 @@ async function openCaseGridWithRetry(page, maxAttempts = OPEN_TAB_MAX_ATTEMPTS) 
   };
 
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-    if (await hasGrid()) return;
+    if (await hasGrid()) {
+      console.log(`[roll] grid de cases visível (tentativa ${attempt})`);
+      return;
+    }
 
-    await tryClickToShowGrid();
+    const clickState = await tryClickToShowGrid();
+    console.log(`[roll] grid ausente, tentativa ${attempt}/${maxAttempts}, click=${clickState}`);
 
     await waitMs(page, 250);
     if (await hasGrid()) return;
@@ -456,8 +510,12 @@ async function getCaseRarityFromProfile(page, rollId) {
 
 async function findCaseAndOpenProvably(page, rollId, maxClicks = LOAD_MORE_MAX_CLICKS) {
   const initialInfo = await getCaseRarityFromProfile(page, rollId);
-  if (await hasCaseAnchor(page, rollId)) {
+  const foundNow = await hasCaseAnchor(page, rollId);
+  logStep(rollId, 'case-anchor', { found: foundNow, rarity: initialInfo?.rarity || '' });
+  if (foundNow) {
+    logStep(rollId, 'case-anchor.click', { url: page.url() });
     await clickCaseAnchor(page, rollId);
+    logStep(rollId, 'case-anchor.opened', { url: page.url() });
     return { opened: true, rarityInfo: initialInfo };
   }
 
@@ -465,8 +523,12 @@ async function findCaseAndOpenProvably(page, rollId, maxClicks = LOAD_MORE_MAX_C
     const before = await page.evaluate(() =>
       document.querySelectorAll('.grid_drops .skin').length
     );
+    logStep(rollId, 'case-load-more', { click: i + 1, skins: before });
     const clicked = await clickLoadMoreOnce(page);
-    if (!clicked) break;
+    if (!clicked) {
+      logStep(rollId, 'case-load-more.stop', 'botão não encontrado');
+      break;
+    }
 
     await waitMs(page, 250);
     try {
@@ -478,22 +540,22 @@ async function findCaseAndOpenProvably(page, rollId, maxClicks = LOAD_MORE_MAX_C
 
     const rarityInfo = await getCaseRarityFromProfile(page, rollId);
     if (await hasCaseAnchor(page, rollId)) {
+      logStep(rollId, 'case-anchor.click-after-load-more', { url: page.url() });
       await clickCaseAnchor(page, rollId);
+      logStep(rollId, 'case-anchor.opened', { url: page.url() });
       return { opened: true, rarityInfo };
     }
   }
 
+  logStep(rollId, 'case-anchor.missing');
   return { opened: false, rarityInfo: { rarity: '', rarityClassSource: '' } };
 }
 
 /** =========================
  *  PROVABLY (COMUM)
  * ======================= */
-async function getRollNumberFromProvably(page) {
-  await page.waitForSelector(
-    '.provably-fair-roll__number-value, .layout-provably-fair__title',
-    { timeout: 10000 }
-  );
+async function getRollNumberFromProvably(page, rollId = '') {
+  await waitForProvablyReady(page, rollId);
   const provablyUrl = page.url();
 
   const rollNumber = await page.evaluate(() => {
@@ -507,6 +569,10 @@ async function getRollNumberFromProvably(page) {
 
     const direct = clean(document.querySelector('.provably-fair-roll__number-value')?.textContent || '');
     if (direct) return parseNum(direct);
+
+    const upgradeMarker = clean(document.querySelector('.provably-fair-progress__marker')?.textContent || '');
+    const upgradeMatch = upgradeMarker.match(/roll\s+([\d.,]+)/i);
+    if (upgradeMatch) return parseNum(upgradeMatch[1]);
 
     const marker = clean(document.querySelector('.provably-fair-line__marker-label')?.textContent || '');
     const markerMatch = marker.match(/([\d][\d.,]*)/);
@@ -543,10 +609,7 @@ async function getRollNumberFromProvably(page) {
  *  PARSE PROVABLY (CASE)
  * ======================= */
 async function parseProvablyCasePage(page, rollId, baseUser) {
-  await page.waitForSelector(
-    '.provably-fair-roll__number-value, .layout-provably-fair__title',
-    { timeout: 10000 }
-  );
+  await waitForProvablyReady(page, rollId);
   const provablyUrl = page.url();
 
   return page.evaluate((wanted, provablyUrl, baseUser, RARITY_HINTS) => {
@@ -786,29 +849,49 @@ export async function fetchRollBlockHTML({
   type = 'upgrade',
   timeoutMs = JOB_TIMEOUT_MS,
 }) {
+  logStep(rollId, 'start', { userId, type, timeoutMs });
   return browserPool.withPage(async (page) => {
     page.on('console', (msg) => console.log('[page]', msg.text()));
     page.setDefaultTimeout(12_000);
     page.setDefaultNavigationTimeout(20_000);
 
     const url = `https://csgo.net/user/${encodeURIComponent(userId)}`;
+    logStep(rollId, 'profile.goto', url);
     await page.goto(url, { waitUntil: 'networkidle2', timeout: 30_000 });
+    logStep(rollId, 'profile.loaded', { url: page.url() });
     await hideMobileNav(page);
 
     // Captura robusta no perfil (variável local — evita race condition entre jobs paralelos)
     let userData = await getUserDataRobust(page);
+    logStep(rollId, 'profile.user', {
+      status: userData?._status || '',
+      userId: userData?.userId || '',
+      userName: userData?.userName || '',
+    });
 
     if (type === 'upgrade') {
+      logStep(rollId, 'upgrade.open-tab');
       await openUpgradesWithRetry(page);
       await page.waitForSelector('.skins-block', { timeout: 10_000 });
+      logStep(rollId, 'upgrade.tab-ready');
 
       userData = await maybeRefetchUserData(page, userData);
 
       const data = await findUpgradeWithLoadMore(page, rollId, LOAD_MORE_MAX_CLICKS, userData);
-      if (!data) throw new Error(`RollID ${rollId} não encontrado (upgrade)`);
+      if (!data) {
+        await logPageSnapshot(page, rollId, 'upgrade não encontrado');
+        throw new Error(`RollID ${rollId} não encontrado (upgrade)`);
+      }
+      logStep(rollId, 'upgrade.found', {
+        chance: data.chance,
+        receivedBalance: data.receivedBalance,
+      });
 
+      logStep(rollId, 'upgrade.open-provably');
       await openUpgradeProvably(page, rollId);
-      const { rollNumber, provablyUrl } = await getRollNumberFromProvably(page);
+      logStep(rollId, 'upgrade.provably-navigated', { url: page.url() });
+      const { rollNumber, provablyUrl } = await getRollNumberFromProvably(page, rollId);
+      logStep(rollId, 'upgrade.done', { rollNumber, provablyUrl });
 
       return {
         ...data,
@@ -819,17 +902,33 @@ export async function fetchRollBlockHTML({
     }
 
     // === type === 'case' ===
+    logStep(rollId, 'case.open-grid');
     await openCaseGridWithRetry(page);
+    logStep(rollId, 'case.grid-ready', { url: page.url() });
 
     userData = await maybeRefetchUserData(page, userData);
 
     const { opened, rarityInfo } = await findCaseAndOpenProvably(page, rollId, LOAD_MORE_MAX_CLICKS);
-    if (!opened) throw new Error(`RollID ${rollId} não encontrado (case)`);
+    if (!opened) {
+      await logPageSnapshot(page, rollId, 'case não encontrado');
+      throw new Error(`RollID ${rollId} não encontrado (case)`);
+    }
+    logStep(rollId, 'case.opened', { url: page.url(), rarity: rarityInfo?.rarity || '' });
 
     const data = await parseProvablyCasePage(page, rollId, userData);
     if (!data) throw new Error('Falha ao parsear Provably Fair (case)');
 
     const pageRarity = data.drop?.rarity || '';
+    logStep(rollId, 'case.parsed', {
+      rollNumber: data.rollNumber,
+      caseName: data.case?.name,
+      casePrice: data.case?.price,
+      dropName: data.drop?.name,
+      dropPrice: data.drop?.price,
+      oddsPercent: data.drop?.oddsPercent,
+      range: data.drop?.range,
+      rarity: pageRarity || rarityInfo?.rarity || '',
+    });
     return {
       ...data,
       drop: {

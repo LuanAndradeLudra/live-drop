@@ -139,6 +139,8 @@ export async function consumeBatch({ batch = DEFAULT_BATCH } = {}) {
       await deleteFromQueue(job.id);
       done += 1;
     } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      console.error('[rolls] job failed', job.roll, job.type, job.userId, message);
       await markFailedOrRequeue(job.id, MAX_TRIES);
       requeued += 1;
     }
