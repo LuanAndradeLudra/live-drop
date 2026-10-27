@@ -24,7 +24,7 @@ export type CaseResult = {
   provablyUrl: string;
   rollNumber: number | null;
   case: { name: string; image: string; price: number | null; currency: string | null };
-  drop: { name: string; image: string; price: number | null; currency: string | null; oddsPercent: number | null; range: string | null };
+  drop: { name: string; image: string; price: number | null; currency: string | null; oddsPercent: number | null; range: string | null; rarity: string };
 };
 
 export type FetchOutput = UpgradeResult | CaseResult;

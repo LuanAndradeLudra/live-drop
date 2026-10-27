@@ -490,7 +490,10 @@ async function findCaseAndOpenProvably(page, rollId, maxClicks = LOAD_MORE_MAX_C
  *  PROVABLY (COMUM)
  * ======================= */
 async function getRollNumberFromProvably(page) {
-  await page.waitForSelector('.layout-provably-fair__title', { timeout: 10000 });
+  await page.waitForSelector(
+    '.provably-fair-roll__number-value, .layout-provably-fair__title',
+    { timeout: 10000 }
+  );
   const provablyUrl = page.url();
 
   const rollNumber = await page.evaluate(() => {
@@ -502,20 +505,34 @@ async function getRollNumberFromProvably(page) {
       return Number.isFinite(n) ? n : null;
     };
 
-    const title = document.querySelector('.layout-provably-fair__title');
-    const txt = clean(title?.textContent || '');
+    const direct = clean(document.querySelector('.provably-fair-roll__number-value')?.textContent || '');
+    if (direct) return parseNum(direct);
 
+    const marker = clean(document.querySelector('.provably-fair-line__marker-label')?.textContent || '');
+    const markerMatch = marker.match(/([\d][\d.,]*)/);
+    if (markerMatch) return parseNum(markerMatch[1]);
+
+    const rows = document.querySelectorAll('.table-big_kv tr');
+    for (const tr of rows) {
+      const label = clean(tr.querySelector('td, th')?.textContent || '');
+      if (!/^roll$/i.test(label)) continue;
+      const value = clean(tr.querySelector('td:last-child')?.textContent || '');
+      const n = parseNum(value);
+      if (n !== null) return n;
+    }
+
+    const title = clean(document.querySelector('.layout-provably-fair__title')?.textContent || '');
     const patterns = [
       /roll\s*[:\-–]\s*([\d.,]+)/i,
       /resultado\s*[:\-–]\s*([\d.,]+)/i,
       /jogada\s*[:\-–]\s*([\d.,]+)/i,
     ];
     for (const rx of patterns) {
-      const m = txt.match(rx);
+      const m = title.match(rx);
       if (m) return parseNum(m[1]);
     }
 
-    const anyNum = txt.match(/([\d][\d.,]+)/);
+    const anyNum = title.match(/([\d][\d.,]+)/);
     return anyNum ? parseNum(anyNum[1]) : null;
   });
 
@@ -526,10 +543,13 @@ async function getRollNumberFromProvably(page) {
  *  PARSE PROVABLY (CASE)
  * ======================= */
 async function parseProvablyCasePage(page, rollId, baseUser) {
-  await page.waitForSelector('.layout-provably-fair__title', { timeout: 10000 });
+  await page.waitForSelector(
+    '.provably-fair-roll__number-value, .layout-provably-fair__title',
+    { timeout: 10000 }
+  );
   const provablyUrl = page.url();
 
-  return page.evaluate((wanted, provablyUrl, baseUser) => {
+  return page.evaluate((wanted, provablyUrl, baseUser, RARITY_HINTS) => {
     const clean = (s) => (typeof s === 'string' ? s.replace(/\s+/g, ' ').trim() : s);
     const parseNum = (s) => {
       if (!s) return null;
@@ -550,64 +570,167 @@ async function parseProvablyCasePage(page, rollId, baseUser) {
       }
       return '';
     };
+    const pickRarity = (el) => {
+      if (!el) return '';
+      const classes = Array.from(el.classList || []).map((c) => String(c).toLowerCase());
+      const found = RARITY_HINTS.find((h) => classes.some((c) => c === h || c.includes(h)));
+      return found || '';
+    };
+    const joinItemName = (weapon, skin) => {
+      const left = clean(weapon || '');
+      const right = clean(skin || '');
+      if (left && right) return `${left} | ${right}`;
+      return left || right;
+    };
 
-    const rollTitle = document.querySelector('.layout-provably-fair__title');
     const rollNumber = (() => {
-      const m = (rollTitle?.textContent || '').match(/Roll\s*[:\-–]\s*([\d.,]+)/i);
+      const direct = clean(document.querySelector('.provably-fair-roll__number-value')?.textContent || '');
+      if (direct) return parseNum(direct);
+
+      const marker = clean(document.querySelector('.provably-fair-line__marker-label')?.textContent || '');
+      const markerMatch = marker.match(/([\d][\d.,]*)/);
+      if (markerMatch) return parseNum(markerMatch[1]);
+
+      const title = clean(document.querySelector('.layout-provably-fair__title')?.textContent || '');
+      const m = title.match(/Roll\s*[:\-–]\s*([\d.,]+)/i);
       return m ? parseNum(m[1]) : null;
     })();
 
-    const caseImgEl   = document.querySelector('img.layout-provably-fair__type-img');
-    const caseNameEl  = document.querySelector('.layout-provably-fair__type-title');
-    const casePriceEl = document.querySelector('.layout-provably-fair__type-value.price');
+    const game = document.querySelector('.provably-fair-roll__game');
+    const caseImgEl = game
+      ? game.querySelector('img.provably-fair-roll__game-img')
+      : document.querySelector('img.layout-provably-fair__type-img');
+    const caseNameEl = game
+      ? game.querySelector('.provably-fair-roll__title')
+      : document.querySelector('.layout-provably-fair__type-title');
+    const casePriceEl = game
+      ? game.querySelector('.price')
+      : document.querySelector('.layout-provably-fair__type-value.price');
 
     const caseImage = clean(caseImgEl?.src || '');
-    const caseName  = clean(caseNameEl?.textContent || '');
+    const caseName = clean(caseNameEl?.textContent || '');
     const casePrice = parseNum(casePriceEl?.textContent || '');
     const caseCurrency = currencyFrom(casePriceEl);
 
-    let row =
-      document.querySelector('tr.current-roll-drop, tr.current-drop, tr.is-current, tr.table-big__row_current') ||
-      document.querySelector('.table-big tbody tr');
-
-    const imgEl = row?.querySelector('img.table-big__item-img, .table-big__item-img img');
-    const dropImg = imgEl?.src || '';
-    const imgAlt  = clean(imgEl?.alt || '');
-
-    const dropType = row ? qText(row, `
-      .table-big__first-type,
-      .table-big__type,
-      .table-big__first .type
-    `) : '';
-
-    let dropNameMain = row ? qText(row, `
-      .table-big__first-name,
-      .table-big__name,
-      .table-big__first-title,
-      .table-big__first .name
-    `) : '';
-
-    if (!dropType && !dropNameMain && row) {
-      dropNameMain = qText(row, '.table-big__first, .table-big__title, .table-big__col_first') || imgAlt;
-    }
-
-    let resolvedName = dropNameMain;
-    if (dropType && dropNameMain) resolvedName = `${dropType} | ${dropNameMain}`;
-    if (!resolvedName) resolvedName = imgAlt;
-
-    const dropPriceEl = row?.querySelector('.table-big__accent.price, .price.table-big__accent');
-    const dropPrice = parseNum(dropPriceEl?.textContent || '');
-    const dropCurrency = currencyFrom(dropPriceEl);
-
+    const result = document.querySelector('.provably-fair-roll__result');
+    let resolvedName = '';
+    let dropImg = '';
+    let dropPrice = null;
+    let dropCurrency = null;
     let oddsPercent = null;
     let range = null;
-    if (row) {
-      const tds = Array.from(row.querySelectorAll('td'));
-      if (tds[3]) {
-        const m = (tds[3].textContent || '').match(/([\d.,]+)\s*%/);
-        oddsPercent = m ? parseNum(m[1]) : null;
+    let rarity = '';
+    let rarityClassSource = '';
+
+    if (result) {
+      const weapon = clean(result.querySelector('.provably-fair-roll__title')?.textContent || '');
+      const skin = clean(result.querySelector('.provably-fair-roll__subtitle')?.textContent || '');
+      resolvedName = joinItemName(weapon, skin);
+      dropImg = result.querySelector('img.provably-fair-roll__result-img')?.src || '';
+
+      const dropPriceEl = result.querySelector('.price');
+      dropPrice = parseNum(dropPriceEl?.textContent || '');
+      dropCurrency = currencyFrom(dropPriceEl);
+
+      const oddsText = clean(result.querySelector('.provably-fair-roll__odds')?.textContent || '');
+      const oddsMatch = oddsText.match(/([\d.,]+)\s*%/);
+      oddsPercent = oddsMatch ? parseNum(oddsMatch[1]) : null;
+
+      const rarityEl =
+        result.querySelector('.provably-fair-roll__result-img-wrap') ||
+        result.querySelector('.provably-fair-roll__column') ||
+        result;
+      rarity = pickRarity(rarityEl);
+      rarityClassSource = rarity ? (rarityEl.className || '') : '';
+
+      const rows = Array.from(document.querySelectorAll('tr.table-big__item-row'));
+      const wonRow =
+        document.querySelector('tr.table-big__item-row_won') ||
+        rows.find((tr) => {
+          const first = clean(tr.querySelector('.table-big__first-name')?.textContent || '');
+          const second = clean(tr.querySelector('.table-big__second-name')?.textContent || '');
+          return first === weapon && (!skin || second === skin);
+        });
+
+      if (wonRow) {
+        range = clean(wonRow.querySelector('.table-big__range-value')?.textContent || '');
+        if (!range) {
+          const cells = Array.from(wonRow.querySelectorAll('td'));
+          range = clean(cells[2]?.textContent || '');
+        }
+        if (oddsPercent === null) {
+          const oddsEl = wonRow.querySelector('.provably-fair-odds__value');
+          const m = clean(oddsEl?.textContent || '').match(/([\d.,]+)\s*%/);
+          oddsPercent = m ? parseNum(m[1]) : null;
+        }
+        if (!rarity) {
+          rarity = pickRarity(wonRow);
+          rarityClassSource = rarity ? (wonRow.className || '') : '';
+        }
+        if (!resolvedName) {
+          resolvedName = joinItemName(
+            wonRow.querySelector('.table-big__first-name')?.textContent,
+            wonRow.querySelector('.table-big__second-name')?.textContent
+          );
+        }
+        if (!dropImg) {
+          dropImg = wonRow.querySelector('img.table-big__item-img')?.src || '';
+        }
       }
-      if (tds[2]) range = clean(tds[2].textContent || '');
+    } else {
+      const row =
+        document.querySelector('tr.table-big__item-row_won, tr.current-roll-drop, tr.current-drop, tr.is-current, tr.table-big__row_current') ||
+        document.querySelector('.table-big tbody tr, tr.table-big__item-row');
+
+      const imgEl = row?.querySelector('img.table-big__item-img, .table-big__item-img img');
+      dropImg = imgEl?.src || '';
+      const imgAlt = clean(imgEl?.alt || '');
+
+      const dropType = row ? qText(row, `
+        .table-big__first-type,
+        .table-big__type,
+        .table-big__first .type
+      `) : '';
+
+      const weapon = row ? qText(row, `
+        .table-big__first-name,
+        .table-big__name,
+        .table-big__first-title,
+        .table-big__first .name
+      `) : '';
+      const skin = row ? qText(row, '.table-big__second-name, .table-big__subtitle') : '';
+
+      resolvedName = dropType && weapon
+        ? `${dropType} | ${weapon}`
+        : joinItemName(weapon, skin);
+      if (!resolvedName && row) {
+        resolvedName = qText(row, '.table-big__first, .table-big__title, .table-big__col_first') || imgAlt;
+      }
+      if (!resolvedName) resolvedName = imgAlt;
+
+      const dropPriceEl = row?.querySelector('.table-big__accent.price, .price.table-big__accent, .table-big__cell_price .price');
+      dropPrice = parseNum(dropPriceEl?.textContent || '');
+      dropCurrency = currencyFrom(dropPriceEl);
+
+      if (row) {
+        const oddsEl = row.querySelector('.provably-fair-odds__value');
+        const oddsText = clean(oddsEl?.textContent || '');
+        const oddsMatch = oddsText.match(/([\d.,]+)\s*%/);
+        if (oddsMatch) oddsPercent = parseNum(oddsMatch[1]);
+
+        range = clean(row.querySelector('.table-big__range-value')?.textContent || '');
+        if (oddsPercent === null || !range) {
+          const tds = Array.from(row.querySelectorAll('td'));
+          if (oddsPercent === null && tds[3]) {
+            const m = (tds[3].textContent || '').match(/([\d.,]+)\s*%/);
+            oddsPercent = m ? parseNum(m[1]) : null;
+          }
+          if (!range && tds[2]) range = clean(tds[2].textContent || '');
+        }
+
+        rarity = pickRarity(row);
+        rarityClassSource = rarity ? (row.className || '') : '';
+      }
     }
 
     return {
@@ -628,10 +751,12 @@ async function parseProvablyCasePage(page, rollId, baseUser) {
         price: dropPrice,
         currency: dropCurrency,
         oddsPercent,
-        range,
+        range: range || null,
+        rarity,
       },
+      _rarityClassSource: rarityClassSource,
     };
-  }, rollId, provablyUrl, baseUser);
+  }, rollId, provablyUrl, baseUser, RARITY_HINTS);
 }
 
 async function gotoWithRetry(page, url, tries = 2) {
@@ -704,14 +829,15 @@ export async function fetchRollBlockHTML({
     const data = await parseProvablyCasePage(page, rollId, userData);
     if (!data) throw new Error('Falha ao parsear Provably Fair (case)');
 
+    const pageRarity = data.drop?.rarity || '';
     return {
       ...data,
       drop: {
         ...data.drop,
-        rarity: rarityInfo?.rarity || data.drop?.rarity || '',
+        rarity: pageRarity || rarityInfo?.rarity || '',
       },
-      _raritySource: rarityInfo?.rarity ? 'profile_grid' : (data.drop?.rarity ? 'provably' : ''),
-      _rarityClassSource: rarityInfo?.rarityClassSource || '',
+      _raritySource: pageRarity ? 'provably' : (rarityInfo?.rarity ? 'profile_grid' : ''),
+      _rarityClassSource: data._rarityClassSource || rarityInfo?.rarityClassSource || '',
       _userDataStatus: userData?._status || 'unknown',
     };
   }, { name: `roll-${rollId}`, createTimeoutMs: timeoutMs });
